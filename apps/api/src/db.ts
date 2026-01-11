@@ -1,0 +1,651 @@
+import crypto from 'crypto'
+import pg from 'pg'
+
+const { Pool } = pg
+
+const connectionString = process.env.DATABASE_URL
+
+const pool = new Pool({
+  connectionString,
+})
+
+export interface StoredConversation {
+  id: string
+  type: string
+  title: string | null
+  slug: string | null
+  is_public: boolean
+  created_by: string | null
+}
+
+export interface StoredMessage {
+  id: number
+  room: string
+  username: string
+  message: string
+  created_at: Date
+  user_id: string | null
+  reply_to_message_id: number | null
+  edited_at: Date | null
+  deleted_at: Date | null
+  deleted_by: string | null
+}
+
+export interface StoredMessageReaction {
+  message_id: number
+  user_id: string
+  emoji: string
+}
+
+export interface StoredReadReceipt {
+  id: number
+  room: string
+  user_id: string
+  last_read_message_id: number
+  updated_at: Date
+}
+
+export interface StoredUnreadCountRow {
+  room: string
+  unread_count: number
+}
+
+export async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      password_hash TEXT,
+      avatar_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_accounts (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_account_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (provider, provider_account_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS conversations (
+      id UUID PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT,
+      slug TEXT UNIQUE,
+      is_public BOOLEAN NOT NULL DEFAULT false,
+      created_by UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS conversation_participants (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (conversation_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      sender_id UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      room TEXT NOT NULL,
+      username TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS reply_to_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL;
+
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      id SERIAL PRIMARY KEY,
+      message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      emoji TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (message_id, user_id, emoji)
+    );
+
+    CREATE TABLE IF NOT EXISTS message_reads (
+      id SERIAL PRIMARY KEY,
+      room TEXT NOT NULL,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      last_read_message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (room, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS friends (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      friend_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, friend_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS feedback (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category TEXT,
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+}
+
+export async function createChannelForUser(params: {
+  userId: string
+  name: string
+}): Promise<StoredConversation> {
+  const { userId, name } = params
+  const title = name.trim()
+
+  const baseSlug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'channel'
+
+  const randomSuffix = crypto.randomBytes(2).toString('hex')
+  const slug = `${baseSlug}-${randomSuffix}`
+  const id = crypto.randomUUID()
+
+  const result = await pool.query<StoredConversation>(
+    `INSERT INTO conversations (id, type, title, slug, is_public, created_by)
+     VALUES ($1, 'channel', $2, $3, false, $4)
+     RETURNING id, type, title, slug, is_public, created_by`,
+    [id, title, slug, userId],
+  )
+
+  const channel = result.rows[0]
+
+  await pool.query(
+    `INSERT INTO conversation_participants (conversation_id, user_id, role)
+     VALUES ($1, $2, 'owner')
+     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+    [channel.id, userId],
+  )
+
+  return channel
+}
+
+export async function getChannelsForUser(userId: string): Promise<StoredConversation[]> {
+  const result = await pool.query<StoredConversation>(
+    `SELECT c.id,
+            c.type,
+            c.title,
+            c.slug,
+            c.is_public,
+            c.created_by
+     FROM conversations c
+     JOIN conversation_participants cp ON cp.conversation_id = c.id
+     WHERE cp.user_id = $1
+       AND c.type = 'channel'
+     ORDER BY COALESCE(c.title, c.slug) ASC`,
+    [userId],
+  )
+
+  return result.rows
+}
+
+export async function addUserToChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<void> {
+  const { channelId, userId } = params
+  await pool.query(
+    `INSERT INTO conversation_participants (conversation_id, user_id, role)
+     VALUES ($1, $2, 'member')
+     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+    [channelId, userId],
+  )
+}
+
+export async function saveMessage(params: {
+  room: string
+  username: string
+  message: string
+  userId?: string
+  replyToMessageId?: number | null
+}) {
+  const { room, username, message, userId, replyToMessageId } = params
+  const result = await pool.query<StoredMessage>(
+    'INSERT INTO messages (room, username, message, user_id, reply_to_message_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+    [room, username, message, userId ?? null, replyToMessageId ?? null],
+  )
+  return result.rows[0]
+}
+
+export async function getMessagesForRoom(room: string, limit = 50) {
+  const result = await pool.query<StoredMessage>(
+    'SELECT id, room, username, message, created_at, user_id, reply_to_message_id, edited_at, deleted_at, deleted_by FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT $2',
+    [room, limit],
+  )
+  // Return messages in ascending chronological order for the UI, while still
+  // limiting to the most recent `limit` messages.
+  return result.rows.reverse()
+}
+
+export async function getReadReceiptsForRoom(room: string): Promise<StoredReadReceipt[]> {
+  const result = await pool.query<StoredReadReceipt>(
+    `SELECT id, room, user_id, last_read_message_id, updated_at
+     FROM message_reads
+     WHERE room = $1`,
+    [room],
+  )
+  return result.rows
+}
+
+export interface PasswordResetTokenRow {
+  id: number
+  user_id: string
+  token: string
+  expires_at: Date
+  used_at: Date | null
+  created_at: Date
+}
+
+export async function createPasswordResetTokenForUser(params: {
+  userId: string
+  expiresInMinutes?: number
+}): Promise<PasswordResetTokenRow> {
+  const { userId, expiresInMinutes = 60 } = params
+  const token = crypto.randomBytes(32).toString('hex')
+  const result = await pool.query<PasswordResetTokenRow>(
+    `INSERT INTO password_reset_tokens (user_id, token, expires_at)
+     VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)
+     RETURNING id, user_id, token, expires_at, used_at, created_at`,
+    [userId, token, String(expiresInMinutes)],
+  )
+  return result.rows[0]
+}
+
+export async function findValidPasswordResetToken(
+  token: string,
+): Promise<PasswordResetTokenRow | null> {
+  const result = await pool.query<PasswordResetTokenRow>(
+    `SELECT id, user_id, token, expires_at, used_at, created_at
+     FROM password_reset_tokens
+     WHERE token = $1
+       AND used_at IS NULL
+       AND expires_at > NOW()`,
+    [token],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function markPasswordResetTokenUsed(id: number): Promise<void> {
+  await pool.query(
+    `UPDATE password_reset_tokens
+     SET used_at = NOW()
+     WHERE id = $1`,
+    [id],
+  )
+}
+
+export async function upsertReadReceipt(params: {
+  room: string
+  userId: string
+  lastReadMessageId: number
+}): Promise<StoredReadReceipt> {
+  const { room, userId, lastReadMessageId } = params
+  const result = await pool.query<StoredReadReceipt>(
+    `INSERT INTO message_reads (room, user_id, last_read_message_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (room, user_id)
+     DO UPDATE SET last_read_message_id = GREATEST(message_reads.last_read_message_id, EXCLUDED.last_read_message_id),
+                   updated_at = NOW()
+     RETURNING id, room, user_id, last_read_message_id, updated_at`,
+    [room, userId, lastReadMessageId],
+  )
+  return result.rows[0]
+}
+
+export async function getMessageCountForRoom(room: string): Promise<number> {
+  const result = await pool.query<{ count: string }>(
+    'SELECT COUNT(*)::text AS count FROM messages WHERE room = $1',
+    [room],
+  )
+  const row = result.rows[0]
+  return row ? Number.parseInt(row.count, 10) : 0
+}
+
+export async function getUnreadCountsForUser(
+  userId: string,
+): Promise<StoredUnreadCountRow[]> {
+  const result = await pool.query<StoredUnreadCountRow>(
+    `WITH last_reads AS (
+       SELECT room, last_read_message_id
+       FROM message_reads
+       WHERE user_id = $1
+     )
+     SELECT m.room AS room,
+            COUNT(*)::int AS unread_count
+     FROM messages m
+     LEFT JOIN last_reads lr
+       ON lr.room = m.room
+     WHERE (lr.last_read_message_id IS NULL OR m.id > lr.last_read_message_id)
+       AND m.user_id IS DISTINCT FROM $1
+       AND m.deleted_at IS NULL
+     GROUP BY m.room`,
+    [userId],
+  )
+  return result.rows
+}
+
+export async function getMentionUnreadCountsForUser(
+  userId: string,
+): Promise<StoredUnreadCountRow[]> {
+  const result = await pool.query<StoredUnreadCountRow>(
+    `WITH me AS (
+       SELECT id, display_name
+       FROM users
+       WHERE id = $1
+     ),
+     last_reads AS (
+       SELECT room, last_read_message_id
+       FROM message_reads
+       WHERE user_id = $1
+     )
+     SELECT m.room AS room,
+            COUNT(*)::int AS unread_count
+     FROM messages m
+     JOIN me ON TRUE
+     LEFT JOIN last_reads lr
+       ON lr.room = m.room
+     WHERE (lr.last_read_message_id IS NULL OR m.id > lr.last_read_message_id)
+       AND m.user_id IS DISTINCT FROM $1
+       AND m.deleted_at IS NULL
+       AND m.message ILIKE '%' || '@' || me.display_name || '%'
+     GROUP BY m.room`,
+    [userId],
+  )
+  return result.rows
+}
+
+export async function getReactionsForMessages(messageIds: number[]) {
+  if (messageIds.length === 0) return [] as StoredMessageReaction[]
+
+  const result = await pool.query<StoredMessageReaction>(
+    'SELECT message_id, user_id, emoji FROM message_reactions WHERE message_id = ANY($1)',
+    [messageIds],
+  )
+  return result.rows
+}
+
+export async function addReactionForUser(params: {
+  messageId: number
+  userId: string
+  emoji: string
+}): Promise<void> {
+  const { messageId, userId, emoji } = params
+  await pool.query(
+    `INSERT INTO message_reactions (message_id, user_id, emoji)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
+    [messageId, userId, emoji],
+  )
+}
+
+export async function removeReactionForUser(params: {
+  messageId: number
+  userId: string
+  emoji: string
+}): Promise<void> {
+  const { messageId, userId, emoji } = params
+  await pool.query(
+    'DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
+    [messageId, userId, emoji],
+  )
+}
+
+export async function editMessageForUser(params: {
+  messageId: number
+  userId: string
+  newContent: string
+}): Promise<StoredMessage | null> {
+  const { messageId, userId, newContent } = params
+  const result = await pool.query<StoredMessage>(
+    `UPDATE messages
+     SET message = $1,
+         edited_at = NOW()
+     WHERE id = $2 AND user_id = $3
+     RETURNING *`,
+    [newContent, messageId, userId],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function softDeleteMessageForUser(params: {
+  messageId: number
+  userId: string
+}): Promise<StoredMessage | null> {
+  const { messageId, userId } = params
+  const result = await pool.query<StoredMessage>(
+    `UPDATE messages
+     SET deleted_at = NOW(),
+         deleted_by = $1
+     WHERE id = $2 AND user_id = $1
+     RETURNING *`,
+    [userId, messageId],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function addFriendForUser(params: {
+  userId: string
+  friendUserId: string
+}): Promise<void> {
+  const { userId, friendUserId } = params
+  await pool.query(
+    `INSERT INTO friends (user_id, friend_user_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id, friend_user_id) DO NOTHING`,
+    [userId, friendUserId],
+  )
+}
+
+export async function getFriendsForUser(userId: string): Promise<DbUser[]> {
+  const result = await pool.query<DbUser>(
+    `SELECT u.id,
+            u.email,
+            u.display_name,
+            u.password_hash,
+            u.avatar_url,
+            u.created_at,
+            u.updated_at
+     FROM friends f
+     JOIN users u ON f.friend_user_id = u.id
+     WHERE f.user_id = $1
+     ORDER BY u.display_name ASC`,
+    [userId],
+  )
+  return result.rows
+}
+
+export interface FeedbackRow {
+  id: number
+  user_id: string
+  category: string | null
+  message: string
+  created_at: Date
+}
+
+export async function createFeedback(params: {
+  userId: string
+  category?: string | null
+  message: string
+}): Promise<FeedbackRow> {
+  const { userId, category = null, message } = params
+  const result = await pool.query<FeedbackRow>(
+    `INSERT INTO feedback (user_id, category, message)
+     VALUES ($1, $2, $3)
+     RETURNING id, user_id, category, message, created_at`,
+    [userId, category, message],
+  )
+  return result.rows[0]
+}
+
+export interface FeedbackWithUserRow {
+  id: number
+  user_id: string
+  user_email: string
+  user_display_name: string
+  category: string | null
+  message: string
+  created_at: Date
+}
+
+export async function getRecentFeedbackWithUsers(
+  limit = 100,
+): Promise<FeedbackWithUserRow[]> {
+  const result = await pool.query<FeedbackWithUserRow>(
+    `SELECT f.id,
+            f.user_id,
+            u.email AS user_email,
+            u.display_name AS user_display_name,
+            f.category,
+            f.message,
+            f.created_at
+     FROM feedback f
+     JOIN users u ON u.id = f.user_id
+     ORDER BY f.created_at DESC
+     LIMIT $1`,
+    [limit],
+  )
+  return result.rows
+}
+
+export interface DbUser {
+  id: string
+  email: string
+  display_name: string
+  password_hash: string | null
+  avatar_url: string | null
+  created_at: Date
+  updated_at: Date
+}
+
+export async function updateUserPassword(params: {
+  userId: string
+  passwordHash: string
+}): Promise<void> {
+  const { userId, passwordHash } = params
+  await pool.query(
+    `UPDATE users
+     SET password_hash = $1,
+         updated_at = NOW()
+     WHERE id = $2`,
+    [passwordHash, userId],
+  )
+}
+
+export interface OAuthAccount {
+  id: number
+  user_id: string
+  provider: string
+  provider_account_id: string
+  created_at: Date
+}
+
+export async function createUser(params: {
+  email: string
+  displayName: string
+  passwordHash: string | null
+  avatarUrl?: string | null
+}): Promise<DbUser> {
+  const id = crypto.randomUUID()
+  const { email, displayName, passwordHash, avatarUrl = null } = params
+  const result = await pool.query<DbUser>(
+    `INSERT INTO users (id, email, display_name, password_hash, avatar_url)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, email, display_name, password_hash, avatar_url, created_at, updated_at`,
+    [id, email, displayName, passwordHash, avatarUrl],
+  )
+  return result.rows[0]
+}
+
+export async function findUserByEmail(email: string): Promise<DbUser | null> {
+  const result = await pool.query<DbUser>(
+    `SELECT id, email, display_name, password_hash, avatar_url, created_at, updated_at
+     FROM users
+     WHERE email = $1`,
+    [email],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function getUserById(id: string): Promise<DbUser | null> {
+  const result = await pool.query<DbUser>(
+    `SELECT id, email, display_name, password_hash, avatar_url, created_at, updated_at
+     FROM users
+     WHERE id = $1`,
+    [id],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function findOrCreateUserWithOAuth(params: {
+  provider: string
+  providerAccountId: string
+  email: string
+  displayName: string
+}): Promise<DbUser> {
+  const { provider, providerAccountId, email, displayName } = params
+
+  const existingByAccount = await pool.query<DbUser>(
+    `SELECT u.id, u.email, u.display_name, u.password_hash, u.avatar_url, u.created_at, u.updated_at
+     FROM oauth_accounts oa
+     JOIN users u ON oa.user_id = u.id
+     WHERE oa.provider = $1 AND oa.provider_account_id = $2`,
+    [provider, providerAccountId],
+  )
+  if (existingByAccount.rows[0]) {
+    return existingByAccount.rows[0]
+  }
+
+  const existingByEmail = await findUserByEmail(email)
+  const user =
+    existingByEmail ?? (await createUser({ email, displayName, passwordHash: null }))
+
+  await pool.query<OAuthAccount>(
+    `INSERT INTO oauth_accounts (user_id, provider, provider_account_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (provider, provider_account_id) DO NOTHING`,
+    [user.id, provider, providerAccountId],
+  )
+
+  return user
+}
