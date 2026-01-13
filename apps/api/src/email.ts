@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import sgMail from '@sendgrid/mail'
 
 const smtpHost = process.env.SMTP_HOST
 const smtpPort = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587
@@ -7,11 +8,20 @@ const smtpPass = process.env.SMTP_PASS
 const smtpSecure = process.env.SMTP_SECURE === 'true'
 const fromAddress = process.env.EMAIL_FROM || smtpUser || 'no-reply@pulsechat.local'
 
+const sendgridApiKey = process.env.SENDGRID_API_KEY
+
 function isSmtpConfigured() {
   return Boolean(smtpHost && smtpUser && smtpPass)
 }
 
 let transporter: nodemailer.Transporter | null = null
+let sendgridInitialized = false
+
+function ensureSendgridConfigured() {
+  if (!sendgridApiKey || sendgridInitialized) return
+  sgMail.setApiKey(sendgridApiKey)
+  sendgridInitialized = true
+}
 
 function getTransporter() {
   if (!isSmtpConfigured()) {
@@ -38,6 +48,18 @@ export async function sendEmail(params: {
   html?: string
 }) {
   const { to, subject, text, html } = params
+
+  if (sendgridApiKey) {
+    ensureSendgridConfigured()
+    await sgMail.send({
+      to,
+      from: fromAddress,
+      subject,
+      text,
+      html: html ?? text,
+    })
+    return
+  }
 
   const t = getTransporter()
   if (!t) {
