@@ -20,6 +20,9 @@ import {
   saveMessage,
   addFriendForUser,
   getFriendsForUser,
+  blockUserForUser,
+  unblockUserForUser,
+  getBlockedUsersForUser,
   editMessageForUser,
   softDeleteMessageForUser,
   getReactionsForMessages,
@@ -49,6 +52,7 @@ import {
   getChannelParticipantRole,
   getChannelMembers,
   removeUserFromChannel,
+  deleteChannelById,
   type StoredMessage,
 } from "./db";
 import {
@@ -87,7 +91,7 @@ const upload = multer({
 
 const uploadMiddleware = upload.array("files", 10);
 
-function uploadBufferToCloudinary(file: MulterFile) {
+function uploadBufferToCloudinary(file: Express.Multer.File) {
   return new Promise<{
     url: string;
     publicId: string;
@@ -615,6 +619,75 @@ app.delete(
   }
 );
 
+app.delete(
+  "/channels/:channelId",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const channelId = req.params.channelId as string;
+
+    try {
+      const role = await getChannelParticipantRole({ channelId, userId });
+      if (role !== "owner") {
+        return res.status(403).json({
+          error: "Only the channel owner can delete this channel",
+        });
+      }
+
+      const deleted = await deleteChannelById(channelId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete channel", error);
+      return res.status(500).json({ error: "Failed to delete channel" });
+    }
+  }
+);
+
+app.post(
+  "/channels/:channelId/leave",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const channelId = req.params.channelId as string;
+
+    try {
+      const role = await getChannelParticipantRole({ channelId, userId });
+      if (!role) {
+        return res
+          .status(403)
+          .json({ error: "You are not a member of this channel" });
+      }
+
+      if (role === "owner") {
+        return res.status(400).json({
+          error:
+            "Channel owners cannot leave their own channel. Transfer ownership or delete the channel instead.",
+        });
+      }
+
+      await removeUserFromChannel({ channelId, userId });
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Failed to leave channel", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to leave channel" });
+    }
+  }
+);
+
 app.post("/auth/login", async (req, res) => {
   const { email, password } = req.body as { email?: string; password?: string };
 
@@ -903,6 +976,115 @@ app.post("/friends", authMiddleware, async (req: AuthenticatedRequest, res) => {
   }
 });
 
+app.get(
+  "/me/blocked-users",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const blocked = await getBlockedUsersForUser(userId);
+      return res.json({
+        blocked: blocked.map((u) => ({
+          id: u.id,
+          email: u.email,
+          displayName: u.display_name,
+          avatarUrl: u.avatar_url,
+        })),
+      });
+    } catch (error) {
+      console.error("Failed to load blocked users", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to load blocked users" });
+    }
+  }
+);
+
+app.post(
+  "/me/blocked-users",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { targetUserId, displayName } = req.body as {
+      targetUserId?: string;
+      displayName?: string;
+    };
+
+    if (!targetUserId || !displayName) {
+      return res
+        .status(400)
+        .json({ error: "targetUserId and displayName are required" });
+    }
+    if (targetUserId === userId) {
+      return res
+        .status(400)
+        .json({ error: "You cannot block yourself" });
+    }
+
+    try {
+      const targetUser = await getUserById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (targetUser.display_name !== displayName) {
+        return res
+          .status(400)
+          .json({ error: "Display name does not match this user id" });
+      }
+
+      await blockUserForUser({ userId, blockedUserId: targetUserId });
+
+      return res.status(201).json({
+        blocked: {
+          id: targetUser.id,
+          email: targetUser.email,
+          displayName: targetUser.display_name,
+          avatarUrl: targetUser.avatar_url,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to block user", error);
+      return res.status(500).json({ error: "Failed to block user" });
+    }
+  }
+);
+
+app.delete(
+  "/me/blocked-users/:blockedUserId",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const blockedUserId = req.params.blockedUserId as string;
+
+    if (blockedUserId === userId) {
+      return res
+        .status(400)
+        .json({ error: "You cannot unblock yourself" });
+    }
+
+    try {
+      await unblockUserForUser({ userId, blockedUserId });
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Failed to unblock user", error);
+      return res.status(500).json({ error: "Failed to unblock user" });
+    }
+  }
+);
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -1116,7 +1298,11 @@ io.on("connection", (socket) => {
     return;
   }
 
-  console.log(`Client connected: ${socket.id}`);
+  const connectedUser = socket.data
+    .user as { id: string; email?: string; displayName?: string } | undefined;
+  const connectedLabel =
+    connectedUser?.displayName || connectedUser?.email || socket.id;
+  console.log(`Client connected: ${connectedLabel}`);
 
   socket.on("join_room", (room: string) => {
     socket.join(room);

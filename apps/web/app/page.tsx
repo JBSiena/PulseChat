@@ -73,6 +73,13 @@ interface FriendSummary {
   avatarUrl: string | null;
 }
 
+interface BlockedUserSummary {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
 interface ChannelSummary {
   id: string;
   label: string;
@@ -167,6 +174,15 @@ export default function HomePage() {
   const [addFriendDisplayName, setAddFriendDisplayName] = useState("");
   const [addFriendSubmitting, setAddFriendSubmitting] = useState(false);
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUserSummary[]>([]);
+  const [blockedUsersLoading, setBlockedUsersLoading] = useState(false);
+  const [blockedUsersError, setBlockedUsersError] = useState<string | null>(
+    null
+  );
+  const [blockUserId, setBlockUserId] = useState("");
+  const [blockUserDisplayName, setBlockUserDisplayName] = useState("");
+  const [blockUserSubmitting, setBlockUserSubmitting] = useState(false);
+  const [isManageBlockedOpen, setIsManageBlockedOpen] = useState(false);
   const [channels, setChannels] = useState<ChannelSummary[]>(BUILT_IN_CHANNELS);
   const [isAddChannelOpen, setIsAddChannelOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
@@ -466,7 +482,35 @@ export default function HomePage() {
           : "Failed to load channel members"
       );
     } finally {
-      setChannelMembersLoading(false);
+      setChannelMembersError(null);
+    }
+  };
+
+  const handleLeaveActiveChannel = async () => {
+    if (!authToken || !activeCustomChannel?.conversationId) return;
+    setChannelMembersError(null);
+    try {
+      await axios.post(
+        `${apiBaseUrl}/channels/${activeCustomChannel.conversationId}/leave`,
+        null,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+      setChannels((prev) =>
+        prev.filter((ch) => ch.id !== activeCustomChannel.id)
+      );
+      if (room === activeCustomChannel.id) {
+        dispatch(setRoom("general"));
+      }
+      setChannelMembers([]);
+      setChannelMembersOpen(false);
+    } catch (error) {
+      setChannelMembersError(
+        error instanceof Error ? error.message : "Failed to leave channel"
+      );
     }
   };
 
@@ -497,6 +541,41 @@ export default function HomePage() {
         error instanceof Error
           ? error.message
           : "Failed to remove member from channel"
+      );
+    }
+  };
+
+  const handleDeleteActiveChannel = async () => {
+    if (!authToken || !activeCustomChannel?.conversationId) return;
+
+    const confirmed = window.confirm(
+      `Delete channel ${activeCustomChannel.label.replace(
+        "# ",
+        "#"
+      )}? All messages in this channel and its member list will be permanently removed. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setChannelInviteError(null);
+    try {
+      await axios.delete(
+        `${apiBaseUrl}/channels/${activeCustomChannel.conversationId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+
+      setChannels((prev) => prev.filter((ch) => ch.id !== activeCustomChannel.id));
+      if (room === activeCustomChannel.id) {
+        dispatch(setRoom("general"));
+      }
+      setChannelMembersOpen(false);
+      setChannelMembers([]);
+    } catch (error) {
+      setChannelInviteError(
+        error instanceof Error ? error.message : "Failed to delete channel"
       );
     }
   };
@@ -693,6 +772,11 @@ export default function HomePage() {
     ? activeDmFriend?.displayName?.charAt(0).toUpperCase() ?? "@"
     : "#";
 
+  const isActiveFriendBlocked =
+    isDmRoom && activeDmFriend
+      ? blockedUsers.some((u) => u.id === activeDmFriend.id)
+      : false;
+
   let dmDeliveryLabel: string | null = null;
   if (isDmRoom && authUser && activeDmFriend) {
     const friendReceipt = readReceipts.find(
@@ -786,6 +870,52 @@ export default function HomePage() {
     };
 
     void loadFriends();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, authToken]);
+
+  // Load blocked users for the authenticated user
+  useEffect(() => {
+    if (!authToken) {
+      setBlockedUsers([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadBlocked = async () => {
+      setBlockedUsersLoading(true);
+      setBlockedUsersError(null);
+      try {
+        const res = await axios.get<{ blocked: BlockedUserSummary[] }>(
+          `${apiBaseUrl}/me/blocked-users`,
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        );
+        if (!cancelled) {
+          setBlockedUsers(res.data.blocked ?? []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBlockedUsersError(
+            error instanceof Error
+              ? error.message
+              : "Failed to load blocked users"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setBlockedUsersLoading(false);
+        }
+      }
+    };
+
+    void loadBlocked();
 
     return () => {
       cancelled = true;
@@ -1875,6 +2005,80 @@ export default function HomePage() {
     }
   };
 
+  const blockUserByIdAndDisplayName = async (
+    targetUserId: string,
+    displayName: string
+  ) => {
+    if (!authToken) {
+      setBlockedUsersError("You must be logged in to block users");
+      return;
+    }
+
+    const trimmedId = targetUserId.trim();
+    const trimmedName = displayName.trim();
+    if (!trimmedId || !trimmedName) {
+      setBlockedUsersError("User ID and display name are required");
+      return;
+    }
+
+    setBlockUserSubmitting(true);
+    setBlockedUsersError(null);
+
+    try {
+      const res = await axios.post<{ blocked: BlockedUserSummary }>(
+        `${apiBaseUrl}/me/blocked-users`,
+        { targetUserId: trimmedId, displayName: trimmedName },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+      setBlockedUsers((prev) =>
+        prev.some((u) => u.id === res.data.blocked.id)
+          ? prev
+          : [...prev, res.data.blocked]
+      );
+    } catch (error) {
+      setBlockedUsersError(
+        error instanceof Error ? error.message : "Failed to block user"
+      );
+    } finally {
+      setBlockUserSubmitting(false);
+    }
+  };
+
+  const handleBlockUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await blockUserByIdAndDisplayName(blockUserId, blockUserDisplayName);
+    setBlockUserId("");
+    setBlockUserDisplayName("");
+  };
+
+  const handleUnblockUser = async (blockedUserId: string) => {
+    if (!authToken) {
+      setBlockedUsersError("You must be logged in to unblock users");
+      return;
+    }
+
+    setBlockedUsersError(null);
+    try {
+      await axios.delete(`${apiBaseUrl}/me/blocked-users/${blockedUserId}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      setBlockedUsers((prev) =>
+        prev.filter((u) => u.id !== blockedUserId)
+      );
+    } catch (error) {
+      setBlockedUsersError(
+        error instanceof Error ? error.message : "Failed to unblock user"
+      );
+    }
+  };
+
   const handleSubmitFeedback = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!authToken) {
@@ -2818,6 +3022,18 @@ export default function HomePage() {
               </form>
             )}
 
+            {activeCustomChannel && !isActiveChannelOwner && (
+              <div className="mt-3 px-2">
+                <button
+                  type="button"
+                  onClick={handleLeaveActiveChannel}
+                  className="inline-flex w-full items-center justify-center rounded-md border border-rose-600 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-600/10 hover:text-rose-200"
+                >
+                  Leave {activeCustomChannel.label.replace("# ", "#")} 
+                </button>
+              </div>
+            )}
+
             {activeCustomChannel && isActiveChannelOwner && (
               <form
                 onSubmit={handleInviteFriendToActiveChannel}
@@ -2854,6 +3070,13 @@ export default function HomePage() {
                   }
                 >
                   {channelInviteSubmitting ? "Inviting…" : "Invite to channel"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteActiveChannel}
+                  className="mt-2 inline-flex w-full items-center justify-center rounded-md border border-rose-700 px-2 py-1 text-[11px] font-medium text-rose-300 hover:bg-rose-700/20 hover:text-rose-100"
+                >
+                  Delete channel
                 </button>
               </form>
             )}
@@ -2963,6 +3186,88 @@ export default function HomePage() {
                 </form>
               )}
             </div>
+
+            <div className="mt-4 flex items-center justify-between px-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              <span>Blocked Users</span>
+              <button
+                type="button"
+                className="inline-flex h-4 items-center justify-center rounded-full border border-slate-600 px-2 text-[10px] text-slate-300 hover:border-rose-500 hover:text-rose-300"
+                onClick={() => {
+                  setIsManageBlockedOpen((prev) => !prev);
+                  setBlockedUsersError(null);
+                }}
+              >
+                {isManageBlockedOpen ? "Hide" : "Manage"}
+              </button>
+            </div>
+            {isManageBlockedOpen && (
+              <div className="mt-1 space-y-1 px-2 pb-2 text-[11px] text-slate-300">
+                {blockedUsersError && (
+                  <p className="text-[10px] text-rose-400">{blockedUsersError}</p>
+                )}
+                {blockedUsersLoading ? (
+                  <p className="text-[10px] text-slate-500">
+                    Loading blocked users...
+                  </p>
+                ) : blockedUsers.length === 0 ? (
+                  <p className="text-[10px] text-slate-500">
+                    You have not blocked anyone yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {blockedUsers.map((user) => (
+                      <li
+                        key={user.id}
+                        className="flex items-center justify-between rounded-md bg-slate-900/80 px-2 py-1"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-medium">
+                            {user.displayName}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {user.email}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUnblockUser(user.id)}
+                          className="text-[10px] text-emerald-400 hover:text-emerald-300"
+                        >
+                          Unblock
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <form
+                  onSubmit={handleBlockUser}
+                  className="mt-2 space-y-1 text-[11px] text-slate-300"
+                >
+                  <p className="text-[10px] text-slate-500">
+                    Block user by ID & name
+                  </p>
+                  <input
+                    className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                    placeholder="User ID (UUID)"
+                    value={blockUserId}
+                    onChange={(e) => setBlockUserId(e.target.value)}
+                  />
+                  <input
+                    className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                    placeholder="User display name"
+                    value={blockUserDisplayName}
+                    onChange={(e) => setBlockUserDisplayName(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex w-full items-center justify-center rounded-md bg-rose-500 px-2 py-1 text-[11px] font-medium text-rose-950 hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={blockUserSubmitting}
+                  >
+                    {blockUserSubmitting ? "Blocking..." : "Block user"}
+                  </button>
+                </form>
+              </div>
+            )}
           </nav>
           <div className="border-t border-slate-800 px-4 py-3 text-xs">
             <button
@@ -3072,6 +3377,22 @@ export default function HomePage() {
                 />
                 <span>{connected ? "Connected" : "Disconnected"}</span>
               </div>
+              {isDmRoom && activeDmFriend && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    isActiveFriendBlocked
+                      ? handleUnblockUser(activeDmFriend.id)
+                      : blockUserByIdAndDisplayName(
+                          activeDmFriend.id,
+                          activeDmFriend.displayName
+                        )
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-300 hover:border-rose-500 hover:text-rose-300"
+                >
+                  {isActiveFriendBlocked ? "Unblock user" : "Block user"}
+                </button>
+              )}
               {activeCustomChannel && (
                 <button
                   type="button"
@@ -3143,6 +3464,9 @@ export default function HomePage() {
                             isActiveChannelOwner &&
                             !member.isSelf &&
                             member.role !== "owner";
+                          const isBlocked = blockedUsers.some(
+                            (u) => u.id === member.id
+                          );
                           return (
                             <li
                               key={member.id}
@@ -3160,17 +3484,35 @@ export default function HomePage() {
                                   {member.role}
                                 </span>
                               </div>
-                              {canRemove && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleRemoveChannelMember(member)
-                                  }
-                                  className="text-[10px] text-rose-400 hover:text-rose-300"
-                                >
-                                  Remove
-                                </button>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {!member.isSelf && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      isBlocked
+                                          ? handleUnblockUser(member.id)
+                                          : blockUserByIdAndDisplayName(
+                                              member.id,
+                                              member.displayName
+                                            )
+                                    }
+                                    className="text-[10px] text-slate-300 hover:text-rose-300"
+                                  >
+                                    {isBlocked ? "Unblock" : "Block"}
+                                  </button>
+                                )}
+                                {canRemove && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleRemoveChannelMember(member)
+                                    }
+                                    className="text-[10px] text-rose-400 hover:text-rose-300"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
                             </li>
                           );
                         })}

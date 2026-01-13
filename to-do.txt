@@ -3,3 +3,5 @@ Channel Ownership - edit role of members, delete channel, delete messages, assig
 Profile/Account - edit profile picture, edit username, edit display name, edit bio, edit status, edit theme (dark/light), edit notifications, edit security settings.
 
 Friends - add friends, remove friends, block friends, unblock friends, send friend requests, accept friend requests, decline friend requests, cancel friend requests.
+
+Message/chatbox - Always put below.

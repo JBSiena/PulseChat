@@ -178,6 +178,14 @@ export async function initDb() {
       UNIQUE (user_id, friend_user_id)
     );
 
+    CREATE TABLE IF NOT EXISTS blocked_users (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      blocked_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, blocked_user_id)
+    );
+
     CREATE TABLE IF NOT EXISTS feedback (
       id BIGSERIAL PRIMARY KEY,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -334,6 +342,17 @@ export async function removeUserFromChannel(params: {
   )
 }
 
+export async function deleteChannelById(channelId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM conversations
+     WHERE id = $1
+       AND type = 'channel'`,
+    [channelId],
+  )
+
+  return (result.rowCount ?? 0) > 0
+}
+
 export async function saveMessage(params: {
   room: string
   username: string
@@ -388,6 +407,51 @@ export async function getReadReceiptsForRoom(room: string): Promise<StoredReadRe
      FROM message_reads
      WHERE room = $1`,
     [room],
+  )
+  return result.rows
+}
+
+export async function blockUserForUser(params: {
+  userId: string
+  blockedUserId: string
+}): Promise<void> {
+  const { userId, blockedUserId } = params
+  await pool.query(
+    `INSERT INTO blocked_users (user_id, blocked_user_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id, blocked_user_id) DO NOTHING`,
+    [userId, blockedUserId],
+  )
+}
+
+export async function unblockUserForUser(params: {
+  userId: string
+  blockedUserId: string
+}): Promise<void> {
+  const { userId, blockedUserId } = params
+  await pool.query(
+    `DELETE FROM blocked_users
+     WHERE user_id = $1 AND blocked_user_id = $2`,
+    [userId, blockedUserId],
+  )
+}
+
+export async function getBlockedUsersForUser(userId: string): Promise<DbUser[]> {
+  const result = await pool.query<DbUser>(
+    `SELECT u.id,
+            u.email,
+            u.display_name,
+            u.password_hash,
+            u.avatar_url,
+            u.email_verified,
+            u.global_role,
+            u.created_at,
+            u.updated_at
+     FROM blocked_users b
+     JOIN users u ON b.blocked_user_id = u.id
+     WHERE b.user_id = $1
+     ORDER BY u.display_name ASC`,
+    [userId],
   )
   return result.rows
 }
