@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.3;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation-name: typing-bounce;
+  animation-duration: 1s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+
+.typing-dot-1 {
+  animation-delay: 0s;
+}
+
+.typing-dot-2 {
+  animation-delay: 0.15s;
+}
+
+.typing-dot-3 {
+  animation-delay: 0.3s;
+}
+
 :root {
   color-scheme: dark light;
 }

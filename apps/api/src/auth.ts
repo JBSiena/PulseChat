@@ -25,6 +25,7 @@ export interface JwtPayload {
   sub: string
   email: string
   displayName: string
+  globalRole: string
 }
 
 export function signAccessToken(user: DbUser) {
@@ -33,8 +34,29 @@ export function signAccessToken(user: DbUser) {
     sub: user.id,
     email: user.email,
     displayName: user.display_name,
+    globalRole: user.global_role,
   }
   return jwt.sign(payload, secret, { expiresIn: JWT_EXPIRES_IN })
+}
+
+const GLOBAL_ROLE_RANK: Record<string, number> = {
+  guest: 0,
+  member: 1,
+  moderator: 2,
+  admin: 3,
+  superadmin: 4,
+}
+
+export type GlobalRole = keyof typeof GLOBAL_ROLE_RANK
+
+export function hasGlobalRoleAtLeast(
+  role: string | null | undefined,
+  required: GlobalRole,
+): boolean {
+  const normalized = (role ?? 'member').toLowerCase()
+  const currentRank = GLOBAL_ROLE_RANK[normalized] ?? GLOBAL_ROLE_RANK.member
+  const requiredRank = GLOBAL_ROLE_RANK[required]
+  return currentRank >= requiredRank
 }
 
 export function verifyToken(token: string): JwtPayload {
@@ -43,7 +65,7 @@ export function verifyToken(token: string): JwtPayload {
 }
 
 export interface AuthenticatedRequest extends Request {
-  user?: JwtPayload
+  user?: JwtPayload & { sub: string }
 }
 
 export function authMiddleware(
@@ -60,7 +82,15 @@ export function authMiddleware(
 
   try {
     const secret = getJwtSecret()
-    const decoded = jwt.verify(token, secret) as JwtPayload
+    const decodedAny = jwt.verify(token, secret) as JwtPayload & {
+      globalRole?: string
+    }
+    const decoded: JwtPayload = {
+      sub: decodedAny.sub,
+      email: decodedAny.email,
+      displayName: decodedAny.displayName,
+      globalRole: decodedAny.globalRole ?? 'member',
+    }
     req.user = decoded
     return next()
   } catch (error) {

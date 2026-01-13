@@ -16,6 +16,7 @@ export interface StoredConversation {
   slug: string | null
   is_public: boolean
   created_by: string | null
+  participant_role?: string | null
 }
 
 export interface StoredMessage {
@@ -29,6 +30,18 @@ export interface StoredMessage {
   edited_at: Date | null
   deleted_at: Date | null
   deleted_by: string | null
+}
+
+export interface StoredMessageAttachment {
+  id: number
+  message_id: number | null
+  uploader_user_id: string | null
+  url: string
+  public_id: string
+  mime_type: string | null
+  file_size: number | null
+  original_filename: string | null
+  created_at: Date
 }
 
 export interface StoredMessageReaction {
@@ -61,6 +74,12 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS global_role TEXT NOT NULL DEFAULT 'member';
 
     CREATE TABLE IF NOT EXISTS oauth_accounts (
       id BIGSERIAL PRIMARY KEY,
@@ -121,6 +140,18 @@ export async function initDb() {
     ALTER TABLE messages
       ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL;
 
+    CREATE TABLE IF NOT EXISTS message_attachments (
+      id SERIAL PRIMARY KEY,
+      message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+      uploader_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      url TEXT NOT NULL,
+      public_id TEXT NOT NULL,
+      mime_type TEXT,
+      file_size INTEGER,
+      original_filename TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS message_reactions (
       id SERIAL PRIMARY KEY,
       message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -163,7 +194,26 @@ export async function initDb() {
       used_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS email_verification_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `)
+  const adminEmail = process.env.ADMIN_EMAIL
+  if (adminEmail) {
+    await pool.query(
+      `UPDATE users
+       SET global_role = 'superadmin'
+       WHERE LOWER(email) = LOWER($1)
+         AND global_role <> 'superadmin'`,
+      [adminEmail],
+    )
+  }
 }
 
 export async function createChannelForUser(params: {
@@ -208,7 +258,8 @@ export async function getChannelsForUser(userId: string): Promise<StoredConversa
             c.title,
             c.slug,
             c.is_public,
-            c.created_by
+            c.created_by,
+            cp.role AS participant_role
      FROM conversations c
      JOIN conversation_participants cp ON cp.conversation_id = c.id
      WHERE cp.user_id = $1
@@ -229,6 +280,56 @@ export async function addUserToChannel(params: {
     `INSERT INTO conversation_participants (conversation_id, user_id, role)
      VALUES ($1, $2, 'member')
      ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+    [channelId, userId],
+  )
+}
+
+export async function getChannelParticipantRole(params: {
+  channelId: string
+  userId: string
+}): Promise<string | null> {
+  const { channelId, userId } = params
+  const result = await pool.query<{ role: string }>(
+    `SELECT role
+     FROM conversation_participants
+     WHERE conversation_id = $1 AND user_id = $2`,
+    [channelId, userId],
+  )
+
+  return result.rows[0]?.role ?? null
+}
+
+export interface ChannelMemberRow {
+  user_id: string
+  email: string
+  display_name: string
+  role: string
+}
+
+export async function getChannelMembers(channelId: string): Promise<ChannelMemberRow[]> {
+  const result = await pool.query<ChannelMemberRow>(
+    `SELECT cp.user_id,
+            u.email,
+            u.display_name,
+            cp.role
+     FROM conversation_participants cp
+     JOIN users u ON u.id = cp.user_id
+     WHERE cp.conversation_id = $1
+     ORDER BY u.display_name ASC`,
+    [channelId],
+  )
+
+  return result.rows
+}
+
+export async function removeUserFromChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<void> {
+  const { channelId, userId } = params
+  await pool.query(
+    `DELETE FROM conversation_participants
+     WHERE conversation_id = $1 AND user_id = $2`,
     [channelId, userId],
   )
 }
@@ -258,6 +359,29 @@ export async function getMessagesForRoom(room: string, limit = 50) {
   return result.rows.reverse()
 }
 
+export async function getAttachmentsForMessages(
+  messageIds: number[],
+): Promise<StoredMessageAttachment[]> {
+  if (messageIds.length === 0) return []
+
+  const result = await pool.query<StoredMessageAttachment>(
+    `SELECT id,
+            message_id,
+            uploader_user_id,
+            url,
+            public_id,
+            mime_type,
+            file_size,
+            original_filename,
+            created_at
+     FROM message_attachments
+     WHERE message_id = ANY($1)`,
+    [messageIds],
+  )
+
+  return result.rows
+}
+
 export async function getReadReceiptsForRoom(room: string): Promise<StoredReadReceipt[]> {
   const result = await pool.query<StoredReadReceipt>(
     `SELECT id, room, user_id, last_read_message_id, updated_at
@@ -282,7 +406,8 @@ export async function createPasswordResetTokenForUser(params: {
   expiresInMinutes?: number
 }): Promise<PasswordResetTokenRow> {
   const { userId, expiresInMinutes = 60 } = params
-  const token = crypto.randomBytes(32).toString('hex')
+  const int = crypto.randomInt(0, 1_000_000)
+  const token = int.toString().padStart(6, '0')
   const result = await pool.query<PasswordResetTokenRow>(
     `INSERT INTO password_reset_tokens (user_id, token, expires_at)
      VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)
@@ -306,9 +431,145 @@ export async function findValidPasswordResetToken(
   return result.rows[0] ?? null
 }
 
+export async function createMessageAttachments(params: {
+  uploaderUserId: string
+  uploads: {
+    url: string
+    publicId: string
+    mimeType?: string | null
+    fileSize?: number | null
+    originalFilename?: string | null
+  }[]
+}): Promise<StoredMessageAttachment[]> {
+  const { uploaderUserId, uploads } = params
+  if (uploads.length === 0) return []
+
+  const values: (string | number | null)[] = []
+  const placeholders: string[] = []
+
+  uploads.forEach((upload, index) => {
+    const baseIndex = index * 6
+    placeholders.push(
+      `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6})`,
+    )
+    values.push(
+      uploaderUserId,
+      upload.url,
+      upload.publicId,
+      upload.mimeType ?? null,
+      upload.fileSize ?? null,
+      upload.originalFilename ?? null,
+    )
+  })
+
+  const result = await pool.query<StoredMessageAttachment>(
+    `INSERT INTO message_attachments (
+       uploader_user_id,
+       url,
+       public_id,
+       mime_type,
+       file_size,
+       original_filename
+     )
+     VALUES ${placeholders.join(', ')}
+     RETURNING id,
+               message_id,
+               uploader_user_id,
+               url,
+               public_id,
+               mime_type,
+               file_size,
+               original_filename,
+               created_at`,
+    values,
+  )
+
+  return result.rows
+}
+
+export async function assignAttachmentsToMessage(params: {
+  attachmentIds: number[]
+  messageId: number
+  userId: string
+}): Promise<StoredMessageAttachment[]> {
+  const { attachmentIds, messageId, userId } = params
+  if (attachmentIds.length === 0) return []
+
+  const result = await pool.query<StoredMessageAttachment>(
+    `UPDATE message_attachments
+     SET message_id = $1
+     WHERE id = ANY($2)
+       AND uploader_user_id = $3
+       AND message_id IS NULL
+     RETURNING id,
+               message_id,
+               uploader_user_id,
+               url,
+               public_id,
+               mime_type,
+               file_size,
+               original_filename,
+               created_at`,
+    [messageId, attachmentIds, userId],
+  )
+
+  return result.rows
+}
+
 export async function markPasswordResetTokenUsed(id: number): Promise<void> {
   await pool.query(
     `UPDATE password_reset_tokens
+     SET used_at = NOW()
+     WHERE id = $1`,
+    [id],
+  )
+}
+
+export interface EmailVerificationCodeRow {
+  id: number
+  user_id: string
+  code: string
+  expires_at: Date
+  used_at: Date | null
+  created_at: Date
+}
+
+export async function createEmailVerificationCodeForUser(params: {
+  userId: string
+  expiresInMinutes?: number
+}): Promise<EmailVerificationCodeRow> {
+  const { userId, expiresInMinutes = 15 } = params
+  const int = crypto.randomInt(0, 1_000_000)
+  const code = int.toString().padStart(6, '0')
+  const result = await pool.query<EmailVerificationCodeRow>(
+    `INSERT INTO email_verification_codes (user_id, code, expires_at)
+     VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)
+     RETURNING id, user_id, code, expires_at, used_at, created_at`,
+    [userId, code, String(expiresInMinutes)],
+  )
+  return result.rows[0]
+}
+
+export async function findValidEmailVerificationCodeForUser(params: {
+  userId: string
+  code: string
+}): Promise<EmailVerificationCodeRow | null> {
+  const { userId, code } = params
+  const result = await pool.query<EmailVerificationCodeRow>(
+    `SELECT id, user_id, code, expires_at, used_at, created_at
+     FROM email_verification_codes
+     WHERE user_id = $1
+       AND code = $2
+       AND used_at IS NULL
+       AND expires_at > NOW()`,
+    [userId, code],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function markEmailVerificationCodeUsed(id: number): Promise<void> {
+  await pool.query(
+    `UPDATE email_verification_codes
      SET used_at = NOW()
      WHERE id = $1`,
     [id],
@@ -484,6 +745,8 @@ export async function getFriendsForUser(userId: string): Promise<DbUser[]> {
             u.display_name,
             u.password_hash,
             u.avatar_url,
+            u.email_verified,
+            u.global_role,
             u.created_at,
             u.updated_at
      FROM friends f
@@ -554,6 +817,8 @@ export interface DbUser {
   display_name: string
   password_hash: string | null
   avatar_url: string | null
+  email_verified: boolean
+  global_role: string
   created_at: Date
   updated_at: Date
 }
@@ -569,6 +834,16 @@ export async function updateUserPassword(params: {
          updated_at = NOW()
      WHERE id = $2`,
     [passwordHash, userId],
+  )
+}
+
+export async function markUserEmailVerified(userId: string): Promise<void> {
+  await pool.query(
+    `UPDATE users
+     SET email_verified = TRUE,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [userId],
   )
 }
 
@@ -591,7 +866,7 @@ export async function createUser(params: {
   const result = await pool.query<DbUser>(
     `INSERT INTO users (id, email, display_name, password_hash, avatar_url)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, email, display_name, password_hash, avatar_url, created_at, updated_at`,
+     RETURNING id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at`,
     [id, email, displayName, passwordHash, avatarUrl],
   )
   return result.rows[0]
@@ -599,7 +874,7 @@ export async function createUser(params: {
 
 export async function findUserByEmail(email: string): Promise<DbUser | null> {
   const result = await pool.query<DbUser>(
-    `SELECT id, email, display_name, password_hash, avatar_url, created_at, updated_at
+    `SELECT id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at
      FROM users
      WHERE email = $1`,
     [email],
@@ -607,9 +882,19 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   return result.rows[0] ?? null
 }
 
+export async function findUserByDisplayName(displayName: string): Promise<DbUser | null> {
+  const result = await pool.query<DbUser>(
+    `SELECT id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at
+     FROM users
+     WHERE LOWER(display_name) = LOWER($1)`,
+    [displayName],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function getUserById(id: string): Promise<DbUser | null> {
   const result = await pool.query<DbUser>(
-    `SELECT id, email, display_name, password_hash, avatar_url, created_at, updated_at
+    `SELECT id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id],
@@ -626,7 +911,7 @@ export async function findOrCreateUserWithOAuth(params: {
   const { provider, providerAccountId, email, displayName } = params
 
   const existingByAccount = await pool.query<DbUser>(
-    `SELECT u.id, u.email, u.display_name, u.password_hash, u.avatar_url, u.created_at, u.updated_at
+    `SELECT u.id, u.email, u.display_name, u.password_hash, u.avatar_url, u.email_verified, u.global_role, u.created_at, u.updated_at
      FROM oauth_accounts oa
      JOIN users u ON oa.user_id = u.id
      WHERE oa.provider = $1 AND oa.provider_account_id = $2`,

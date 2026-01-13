@@ -1,0 +1,5 @@
+Channel Ownership - edit role of members, delete channel, delete messages, assign ownership, as well as manage members (add/remove), assign moderator role that only can do specific actions such as delete messages and ban users or mute users for specific time.
+
+Profile/Account - edit profile picture, edit username, edit display name, edit bio, edit status, edit theme (dark/light), edit notifications, edit security settings.
+
+Friends - add friends, remove friends, block friends, unblock friends, send friend requests, accept friend requests, decline friend requests, cancel friend requests.

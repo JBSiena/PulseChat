@@ -5,6 +5,7 @@ export interface AuthUser {
   email: string
   displayName: string
   avatarUrl: string | null
+  globalRole: 'superadmin' | 'admin' | 'moderator' | 'member' | 'guest'
 }
 
 interface AuthState {

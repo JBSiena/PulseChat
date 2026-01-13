@@ -5,6 +5,9 @@ import Providers from './providers'
 export const metadata: Metadata = {
   title: 'PulseChat',
   description: 'PulseChat – a modern realtime chat app built with Next.js and Socket.IO',
+  icons: {
+    icon: '/icon-pulsechat.png',
+  },
 }
 
 export default function RootLayout({
