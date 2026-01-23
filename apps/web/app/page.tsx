@@ -3732,6 +3732,35 @@ export default function HomePage() {
                             ))}
                           </div>
                         )}
+                        {!isDeleted && (
+                          <div className="mt-1 flex gap-2 text-[10px] text-slate-300 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => handleStartReply(msg)}
+                              className="hover:text-emerald-200"
+                            >
+                              Reply
+                            </button>
+                            {isOwn && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEdit(msg)}
+                                  className="hover:text-emerald-200"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMessage(msg)}
+                                  className="hover:text-rose-300"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
