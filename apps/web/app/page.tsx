@@ -244,6 +244,9 @@ export default function HomePage() {
     AttachmentUploadProgress[]
   >([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [userMenuMessage, setUserMenuMessage] = useState<ChatMessage | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -1961,16 +1964,19 @@ export default function HomePage() {
       setChannelInviteSubmitting(false);
     }
   };
-  const handleAddFriend = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+
+  const addFriendByIdAndDisplayName = async (
+    friendId: string,
+    friendDisplayName: string
+  ) => {
     if (!authToken) {
       setFriendsError("You must be logged in to add friends");
       return;
     }
 
-    const friendId = addFriendId.trim();
-    const friendDisplayName = addFriendDisplayName.trim();
-    if (!friendId || !friendDisplayName) {
+    const trimmedId = friendId.trim();
+    const trimmedName = friendDisplayName.trim();
+    if (!trimmedId || !trimmedName) {
       setFriendsError("Friend ID and display name are required");
       return;
     }
@@ -1981,7 +1987,7 @@ export default function HomePage() {
     try {
       const res = await axios.post<{ friend: FriendSummary }>(
         `${apiBaseUrl}/friends`,
-        { friendId, friendDisplayName },
+        { friendId: trimmedId, friendDisplayName: trimmedName },
         {
           headers: {
             "Content-Type": "application/json",
@@ -1994,8 +2000,6 @@ export default function HomePage() {
           ? prev
           : [...prev, res.data.friend]
       );
-      setAddFriendId("");
-      setAddFriendDisplayName("");
     } catch (error) {
       setFriendsError(
         error instanceof Error ? error.message : "Failed to add friend"
@@ -2003,6 +2007,13 @@ export default function HomePage() {
     } finally {
       setAddFriendSubmitting(false);
     }
+  };
+
+  const handleAddFriend = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await addFriendByIdAndDisplayName(addFriendId, addFriendDisplayName);
+    setAddFriendId("");
+    setAddFriendDisplayName("");
   };
 
   const blockUserByIdAndDisplayName = async (
@@ -3576,6 +3587,12 @@ export default function HomePage() {
                     reactionSummaryMap.values()
                   );
                   const quickReactions = ["👍", "❤️", "😂", "😮", "😢"];
+                  const isMenuOpen = userMenuMessage?.id === msg.id;
+                  const isFriendForMessage =
+                    !!msg.userId && friends.some((f) => f.id === msg.userId);
+                  const isBlockedForMessage =
+                    !!msg.userId &&
+                    blockedUsers.some((u) => u.id === msg.userId);
 
                   return (
                     <div
@@ -3585,8 +3602,78 @@ export default function HomePage() {
                       }`}
                     >
                       {!isOwn && (
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200">
-                          {msg.user.charAt(0).toUpperCase()}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!msg.userId) return;
+                              setUserMenuMessage((current) =>
+                                current?.id === msg.id ? null : msg
+                              );
+                            }}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
+                          >
+                            {msg.user.charAt(0).toUpperCase()}
+                          </button>
+                          {isMenuOpen && msg.userId && (
+                            <div className="absolute left-0 top-9 z-20 w-44 rounded-md border border-slate-800 bg-slate-950/95 text-[11px] text-slate-100 shadow-lg">
+                              {authUser && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!msg.userId || !authUser) return;
+                                    const dmRoomId = getDmRoomId(
+                                      authUser.id,
+                                      msg.userId
+                                    );
+                                    handleSelectRoom(dmRoomId);
+                                    setUserMenuMessage(null);
+                                  }}
+                                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-800"
+                                >
+                                  Message
+                                </button>
+                              )}
+                              {msg.userId && !isFriendForMessage && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!msg.userId) return;
+                                    void addFriendByIdAndDisplayName(
+                                      msg.userId,
+                                      msg.user
+                                    );
+                                    setUserMenuMessage(null);
+                                  }}
+                                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-800"
+                                >
+                                  Add friend
+                                </button>
+                              )}
+                              {msg.userId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!msg.userId) return;
+                                    if (isBlockedForMessage) {
+                                      void handleUnblockUser(msg.userId);
+                                    } else {
+                                      void blockUserByIdAndDisplayName(
+                                        msg.userId,
+                                        msg.user
+                                      );
+                                    }
+                                    setUserMenuMessage(null);
+                                  }}
+                                  className="block w-full px-3 py-1.5 text-left text-rose-300 hover:bg-rose-900/40"
+                                >
+                                  {isBlockedForMessage
+                                    ? "Unblock user"
+                                    : "Block user"}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                       <div
