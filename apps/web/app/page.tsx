@@ -2818,7 +2818,7 @@ export default function HomePage() {
 
   return (
     <main className="flex h-screen bg-slate-950 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
-      <div className="flex flex-1 overflow-hidden bg-slate-900/70">
+      <div className="flex flex-1 min-h-0 overflow-hidden bg-slate-900/70">
         {/* Sidebar */}
         <aside className="flex w-64 flex-col border-r border-slate-800 bg-slate-950/70">
           <div className="flex items-center gap-2 px-4 py-4">
@@ -3335,7 +3335,7 @@ export default function HomePage() {
         </aside>
 
         {/* Main conversation area */}
-        <section className="flex flex-1 flex-col bg-slate-900/50">
+        <section className="flex flex-1 min-h-0 flex-col bg-slate-900/50">
           <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-slate-100">
@@ -3426,12 +3426,12 @@ export default function HomePage() {
           {!isAdminFeedbackOpen && (
             <form
               onSubmit={handleSendMessage}
-              className="flex flex-1 flex-col"
+              className="flex flex-1 min-h-0 flex-col"
             >
               <div
                 ref={messagesContainerRef}
                 onScroll={handleMessagesScroll}
-                className="flex-1 space-y-3 overflow-y-auto px-5 py-4 text-sm scrollbar-thin"
+                className="flex-1 space-y-3 overflow-y-scroll px-5 py-4 text-sm scrollbar-thin"
               >
                 {channelMembersOpen && activeCustomChannel && (
                   <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/80 p-3 text-[11px] text-slate-200">
