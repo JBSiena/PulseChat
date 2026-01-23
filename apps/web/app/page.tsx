@@ -3711,6 +3711,20 @@ export default function HomePage() {
                               })}
                             </div>
                           )}
+                        {!isDeleted && (
+                          <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-slate-300 opacity-0 transition-opacity group-hover:opacity-100">
+                            {quickReactions.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(msg, emoji)}
+                                className="rounded-full bg-slate-900/70 px-1.5 py-0.5 hover:bg-emerald-500/40"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         {!isDeleted && reactionSummaries.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {reactionSummaries.map((r) => (
