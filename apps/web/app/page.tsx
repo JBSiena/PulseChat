@@ -3854,7 +3854,7 @@ export default function HomePage() {
               )}
 
               <div className="flex items-center gap-3 border-t border-slate-800/60 px-5 py-3">
-                <div className="flex items-center gap-2">
+                <div className="relative flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setIsEmojiPickerOpen((open) => !open)}
@@ -3862,6 +3862,20 @@ export default function HomePage() {
                   >
                     🙂
                   </button>
+                  {isEmojiPickerOpen && (
+                    <div className="absolute bottom-11 left-0 z-20 rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+                      <EmojiPicker
+                        onEmojiClick={(emojiData) => {
+                          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                          const emojiChar = (emojiData as { emoji?: string }).emoji;
+                          if (emojiChar) {
+                            handleInsertEmoji(emojiChar);
+                          }
+                          setIsEmojiPickerOpen(false);
+                        }}
+                      />
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
