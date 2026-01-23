@@ -3424,7 +3424,10 @@ export default function HomePage() {
             </div>
           </header>
           {!isAdminFeedbackOpen && (
-            <form onSubmit={handleSendMessage} className="flex flex-1 flex-col">
+            <form
+              onSubmit={handleSendMessage}
+              className="flex flex-1 flex-col"
+            >
               <div
                 ref={messagesContainerRef}
                 onScroll={handleMessagesScroll}
@@ -3490,11 +3493,11 @@ export default function HomePage() {
                                     type="button"
                                     onClick={() =>
                                       isBlocked
-                                          ? handleUnblockUser(member.id)
-                                          : blockUserByIdAndDisplayName(
-                                              member.id,
-                                              member.displayName
-                                            )
+                                        ? handleUnblockUser(member.id)
+                                        : blockUserByIdAndDisplayName(
+                                            member.id,
+                                            member.displayName
+                                          )
                                     }
                                     className="text-[10px] text-slate-300 hover:text-rose-300"
                                   >
@@ -3733,175 +3736,177 @@ export default function HomePage() {
                     </div>
                   );
                 })}
-                {(pendingAttachments.length > 0 ||
-                  uploadError ||
-                  uploadingAttachments ||
-                  uploadProgressItems.length > 0) && (
-                  <div className="mt-2 text-[11px]">
-                    {uploadProgressItems.length > 0 && (
-                      <div className="mb-1 flex flex-wrap gap-2">
-                        {uploadProgressItems.map((item) => {
-                          const isImage = item.mimeType.startsWith("image/");
-                          return (
-                            <div
-                              key={item.id}
-                              className="flex items-center gap-2 rounded-md bg-slate-900/90 px-2 py-1"
-                            >
-                              {isImage && item.previewUrl ? (
-                                <div className="h-6 w-6 overflow-hidden rounded bg-slate-800">
-                                  <img
-                                    src={item.previewUrl}
-                                    alt={item.fileName}
-                                    className="h-full w-full object-cover"
-                                  />
-                                </div>
-                              ) : (
-                                <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-800 text-[10px]">
-                                  📄
-                                </span>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-[11px]">
-                                  {item.fileName}
-                                </div>
-                                <div className="mt-0.5 h-1 w-20 overflow-hidden rounded-full bg-slate-800">
-                                  <div
-                                    className="h-full bg-emerald-400 transition-all"
-                                    style={{ width: `${item.progress}%` }}
-                                  />
-                                </div>
+              </div>
+
+              {(pendingAttachments.length > 0 ||
+                uploadError ||
+                uploadingAttachments ||
+                uploadProgressItems.length > 0) && (
+                <div className="px-5 pb-2 text-[11px]">
+                  {uploadProgressItems.length > 0 && (
+                    <div className="mb-1 flex flex-wrap gap-2">
+                      {uploadProgressItems.map((item) => {
+                        const isImage = item.mimeType.startsWith("image/");
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-2 rounded-md bg-slate-900/90 px-2 py-1"
+                          >
+                            {isImage && item.previewUrl ? (
+                              <div className="h-6 w-6 overflow-hidden rounded bg-slate-800">
+                                <img
+                                  src={item.previewUrl}
+                                  alt={item.fileName}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-800 text-[10px]">
+                                📄
+                              </span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[11px]">
+                                {item.fileName}
+                              </div>
+                              <div className="mt-0.5 h-1 w-20 overflow-hidden rounded-full bg-slate-800">
+                                <div
+                                  className="h-full bg-emerald-400 transition-all"
+                                  style={{ width: `${item.progress}%` }}
+                                />
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {pendingAttachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2 rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2">
-                        {pendingAttachments.map((att) => {
-                          const isImage = (att.mimeType ?? "").startsWith(
-                            "image/"
-                          );
-                          const label = getAttachmentDownloadName(att);
-                          const sizeLabel =
-                            att.fileSize != null
-                              ? `${Math.round(att.fileSize / 1024)} KB`
-                              : null;
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {pendingAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2">
+                      {pendingAttachments.map((att) => {
+                        const isImage = (att.mimeType ?? "").startsWith(
+                          "image/"
+                        );
+                        const label = getAttachmentDownloadName(att);
+                        const sizeLabel =
+                          att.fileSize != null
+                            ? `${Math.round(att.fileSize / 1024)} KB`
+                            : null;
 
-                          return (
-                            <div
-                              key={att.id}
-                              className="flex items-center gap-2 rounded-md bg-slate-900/90 px-2 py-1"
-                            >
-                              {isImage ? (
-                                <button
-                                  type="button"
-                                  onClick={() => window.open(att.url, "_blank")}
-                                  className="h-8 w-8 overflow-hidden rounded border border-slate-800 bg-slate-900/60"
-                                >
-                                  <img
-                                    src={att.url}
-                                    alt={label}
-                                    className="h-full w-full object-cover"
-                                  />
-                                </button>
-                              ) : (
-                                <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-800 text-[10px]">
-                                  📄
-                                </span>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-[11px]">
-                                  {label}
-                                </div>
-                                {sizeLabel && (
-                                  <div className="text-[10px] text-slate-400">
-                                    {sizeLabel}
-                                  </div>
-                                )}
-                              </div>
+                        return (
+                          <div
+                            key={att.id}
+                            className="flex items-center gap-2 rounded-md bg-slate-900/90 px-2 py-1"
+                          >
+                            {isImage ? (
                               <button
                                 type="button"
-                                onClick={() =>
-                                  handleRemovePendingAttachment(att.id)
-                                }
-                                className="text-[11px] text-slate-400 hover:text-rose-400"
+                                onClick={() => window.open(att.url, "_blank")}
+                                className="h-8 w-8 overflow-hidden rounded border border-slate-800 bg-slate-900/60"
                               >
-                                ✕
+                                <img
+                                  src={att.url}
+                                  alt={label}
+                                  className="h-full w-full object-cover"
+                                />
                               </button>
+                            ) : (
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-800 text-[10px]">
+                                📄
+                              </span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[11px]">
+                                {label}
+                              </div>
+                              {sizeLabel && (
+                                <div className="text-[10px] text-slate-400">
+                                  {sizeLabel}
+                                </div>
+                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {uploadError && (
-                      <p className="mt-1 text-[11px] text-rose-400">
-                        {uploadError}
-                      </p>
-                    )}
-                    {uploadingAttachments && (
-                      <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
-                        <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>Uploading attachments…</span>
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="mt-3 flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsEmojiPickerOpen((open) => !open)}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-lg text-slate-200"
-                    >
-                      🙂
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-lg text-slate-200"
-                      disabled={
-                        !username || !room || !connected || uploadingAttachments
-                      }
-                    >
-                      {uploadingAttachments ? "⏳" : "📎"}
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={handleAttachmentFilesChange}
-                    />
-                  </div>
-                  <input
-                    className="flex-1 rounded-full border border-slate-700 bg-slate-950 px-4 py-2 text-sm outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60"
-                    placeholder={
-                      !username || !room
-                        ? "Choose a room to start chatting..."
-                        : "Type a message"
-                    }
-                    value={messageInput}
-                    onChange={handleMessageChange}
-                    onKeyDown={handleMessageKeyDown}
-                    ref={messageInputRef}
-                    disabled={!username || !room || !connected}
-                  />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRemovePendingAttachment(att.id)
+                              }
+                              className="text-[11px] text-slate-400 hover:text-rose-400"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {uploadError && (
+                    <p className="mt-1 text-[11px] text-rose-400">
+                      {uploadError}
+                    </p>
+                  )}
+                  {uploadingAttachments && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+                      <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Uploading attachments…</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 border-t border-slate-800/60 px-5 py-3">
+                <div className="flex items-center gap-2">
                   <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    onClick={() => setIsEmojiPickerOpen((open) => !open)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-lg text-slate-200"
+                  >
+                    🙂
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-lg text-slate-200"
                     disabled={
-                      (!messageInput.trim() &&
-                        pendingAttachments.length === 0) ||
-                      !username ||
-                      !room ||
-                      !connected ||
-                      uploadingAttachments
+                      !username || !room || !connected || uploadingAttachments
                     }
                   >
-                    Send
+                    {uploadingAttachments ? "⏳" : "📎"}
                   </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={handleAttachmentFilesChange}
+                  />
                 </div>
+                <input
+                  className="flex-1 rounded-full border border-slate-700 bg-slate-950 px-4 py-2 text-sm outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60"
+                  placeholder={
+                    !username || !room
+                      ? "Choose a room to start chatting..."
+                      : "Type a message"
+                  }
+                  value={messageInput}
+                  onChange={handleMessageChange}
+                  onKeyDown={handleMessageKeyDown}
+                  ref={messageInputRef}
+                  disabled={!username || !room || !connected}
+                />
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={
+                    (!messageInput.trim() &&
+                      pendingAttachments.length === 0) ||
+                    !username ||
+                    !room ||
+                    !connected ||
+                    uploadingAttachments
+                  }
+                >
+                  Send
+                </button>
               </div>
             </form>
           )}
