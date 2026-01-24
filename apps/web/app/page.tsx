@@ -2303,18 +2303,7 @@ export default function HomePage() {
       if (authMode === "login") {
         const data = res.data as {
           token?: string;
-          user?: {
-            id: string;
-            email: string;
-            displayName: string;
-            avatarUrl: string | null;
-            globalRole:
-              | "superadmin"
-              | "admin"
-              | "moderator"
-              | "member"
-              | "guest";
-          };
+          user?: AuthUser;
         };
 
         if (data.token && data.user) {
@@ -2333,18 +2322,7 @@ export default function HomePage() {
         const data = res.data as {
           message?: string;
           verificationRequired?: boolean;
-          user?: {
-            id: string;
-            email: string;
-            displayName: string;
-            avatarUrl: string | null;
-            globalRole:
-              | "superadmin"
-              | "admin"
-              | "moderator"
-              | "member"
-              | "guest";
-          };
+          user?: AuthUser;
           token?: string;
         };
 
@@ -2403,13 +2381,7 @@ export default function HomePage() {
     try {
       const res = await axios.post<{
         token: string;
-        user: {
-          id: string;
-          email: string;
-          displayName: string;
-          avatarUrl: string | null;
-          globalRole: "superadmin" | "admin" | "moderator" | "member" | "guest";
-        };
+        user: AuthUser;
       }>(
         `${apiBaseUrl}/auth/verify-email`,
         { email, code },
