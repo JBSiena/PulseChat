@@ -606,6 +606,95 @@ export async function getBlockedUsersForUser(userId: string): Promise<DbUser[]> 
   return result.rows
 }
 
+export async function searchUsers(params: {
+  query: string
+  limit?: number
+  excludeUserId?: string
+  emailVerifiedOnly?: boolean
+  excludeBannedForConversationId?: string
+}): Promise<DbUser[]> {
+  const {
+    query,
+    limit = 20,
+    excludeUserId,
+    emailVerifiedOnly,
+    excludeBannedForConversationId,
+  } = params
+
+  const like = `%${query}%`
+
+  const whereParts: string[] = []
+  const values: (string | number | boolean)[] = []
+  let idx = 1
+
+  // Match by display name or email
+  values.push(like) // $1
+  values.push(like) // $2
+  whereParts.push('(u.display_name ILIKE $1 OR u.email ILIKE $2)')
+  idx = 3
+
+  // Exclude the current user
+  if (excludeUserId) {
+    values.push(excludeUserId)
+    whereParts.push(`u.id <> $${idx}`)
+    idx += 1
+  }
+
+  // Only include users with verified email if requested
+  if (emailVerifiedOnly) {
+    values.push(true)
+    whereParts.push(`u.email_verified = $${idx}`)
+    idx += 1
+  }
+
+  let joinClause = ''
+
+  // Optionally exclude users who are currently banned from a conversation
+  if (excludeBannedForConversationId) {
+    values.push(excludeBannedForConversationId)
+    const convIdx = idx
+    idx += 1
+
+    joinClause = `
+      LEFT JOIN conversation_bans cb
+        ON cb.user_id = u.id
+       AND cb.conversation_id = $${convIdx}
+       AND (cb.expires_at IS NULL OR cb.expires_at > NOW())
+    `
+
+    whereParts.push('cb.id IS NULL')
+  }
+
+  values.push(limit)
+  const limitIdx = idx
+  idx += 1
+
+  const whereClause = whereParts.length
+    ? `WHERE ${whereParts.join(' AND ')}`
+    : ''
+
+  const result = await pool.query<DbUser>(
+    `SELECT u.id,
+            u.email,
+            u.display_name,
+            u.password_hash,
+            u.avatar_url,
+            u.status,
+            u.email_verified,
+            u.global_role,
+            u.created_at,
+            u.updated_at
+     FROM users u
+     ${joinClause}
+     ${whereClause}
+     ORDER BY u.display_name ASC
+     LIMIT $${limitIdx}`,
+    values,
+  )
+
+  return result.rows
+}
+
 export interface PasswordResetTokenRow {
   id: number
   user_id: string

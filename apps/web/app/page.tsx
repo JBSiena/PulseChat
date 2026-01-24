@@ -188,8 +188,11 @@ export default function HomePage() {
   const [newChannelName, setNewChannelName] = useState("");
   const [addChannelSubmitting, setAddChannelSubmitting] = useState(false);
   const [addChannelError, setAddChannelError] = useState<string | null>(null);
-  const [channelInviteFriendId, setChannelInviteFriendId] = useState("");
-  const [channelInviteDisplayName, setChannelInviteDisplayName] = useState("");
+  const [channelInviteQuery, setChannelInviteQuery] = useState("");
+  const [channelInviteSearchResults, setChannelInviteSearchResults] =
+    useState<FriendSummary[]>([]);
+  const [channelInviteSearchLoading, setChannelInviteSearchLoading] =
+    useState(false);
   const [channelInviteSubmitting, setChannelInviteSubmitting] = useState(false);
   const [channelInviteError, setChannelInviteError] = useState<string | null>(
     null
@@ -591,6 +594,8 @@ export default function HomePage() {
       ) ?? null
     : null;
 
+  const activeChannelConversationId = activeCustomChannel?.conversationId ?? null;
+
   const isActiveChannelOwner = Boolean(
     activeCustomChannel && activeCustomChannel.participantRole === "owner"
   );
@@ -600,6 +605,16 @@ export default function HomePage() {
       (activeCustomChannel.participantRole === "owner" ||
         activeCustomChannel.participantRole === "moderator")
   );
+
+  const channelMemberIds = new Set(channelMembers.map((m) => m.id));
+  const friendIds = new Set(friends.map((f) => f.id));
+
+  const trimmedChannelInviteQuery = channelInviteQuery.trim().toLowerCase();
+
+  const channelInviteMatches =
+    trimmedChannelInviteQuery === ""
+      ? []
+      : channelInviteSearchResults;
 
   const loadChannelMembers = async (channel: ChannelSummary) => {
     if (!authToken || !channel.conversationId) return;
@@ -1051,6 +1066,67 @@ export default function HomePage() {
       cancelled = true;
     };
   }, [apiBaseUrl, authToken]);
+
+  // Search all users for the channel invite box
+  useEffect(() => {
+    const query = channelInviteQuery.trim();
+
+    if (!authToken || !query) {
+      setChannelInviteSearchResults([]);
+      setChannelInviteSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    const runSearch = async () => {
+      setChannelInviteSearchLoading(true);
+      setChannelInviteError(null);
+      try {
+        const res = await axios.get<{ users: FriendSummary[] }>(
+          `${apiBaseUrl}/users/search`,
+          {
+            params: {
+              q: query,
+              limit: 20,
+              channelId: activeChannelConversationId ?? undefined,
+            },
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        );
+
+        if (!cancelled) {
+          setChannelInviteSearchResults(res.data.users ?? []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setChannelInviteError(
+            error instanceof Error
+              ? error.message
+              : "Failed to search users"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setChannelInviteSearchLoading(false);
+        }
+      }
+    };
+
+    timeoutId = window.setTimeout(() => {
+      void runSearch();
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [apiBaseUrl, authToken, channelInviteQuery, activeChannelConversationId]);
 
   // Load blocked users for the authenticated user
   useEffect(() => {
@@ -2096,9 +2172,8 @@ export default function HomePage() {
   };
 
   const handleInviteFriendToActiveChannel = async (
-    event: FormEvent<HTMLFormElement>
+    friend: FriendSummary
   ) => {
-    event.preventDefault();
     if (!authToken || !activeCustomChannel?.conversationId) {
       setChannelInviteError("You must be in a custom channel to invite users");
       return;
@@ -2111,13 +2186,8 @@ export default function HomePage() {
       return;
     }
 
-    const userIdInput = channelInviteFriendId.trim();
-    const displayNameInput = channelInviteDisplayName.trim();
-
-    if (!userIdInput || !displayNameInput) {
-      setChannelInviteError("User ID and display name are required");
-      return;
-    }
+    const userIdInput = friend.id;
+    const displayNameInput = friend.displayName;
 
     setChannelInviteSubmitting(true);
     setChannelInviteError(null);
@@ -2132,8 +2202,9 @@ export default function HomePage() {
           },
         }
       );
-      setChannelInviteFriendId("");
-      setChannelInviteDisplayName("");
+      if (activeCustomChannel) {
+        void loadChannelMembers(activeCustomChannel);
+      }
     } catch (error) {
       setChannelInviteError(
         error instanceof Error
@@ -3198,42 +3269,89 @@ export default function HomePage() {
             )}
 
             {activeCustomChannel && isActiveChannelOwner && (
-              <form
-                onSubmit={handleInviteFriendToActiveChannel}
-                className="mt-3 space-y-1 px-2 text-[11px] text-slate-300"
-              >
+              <div className="mt-3 space-y-1 px-2 text-[11px] text-slate-300">
                 {channelInviteError && (
                   <p className="text-[10px] text-rose-400">
                     {channelInviteError}
                   </p>
                 )}
                 <p className="text-[10px] text-slate-500">
-                  Invite user to {activeCustomChannel.label.replace("# ", "")}{" "}
-                  by ID and display name
+                  Invite your friends to {activeCustomChannel.label.replace(
+                    "# ",
+                    ""
+                  )} by searching their name or email
                 </p>
                 <input
                   className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
-                  placeholder="Enter user ID"
-                  value={channelInviteFriendId}
-                  onChange={(e) => setChannelInviteFriendId(e.target.value)}
+                  placeholder="Search friends by name or email"
+                  value={channelInviteQuery}
+                  onChange={(e) => setChannelInviteQuery(e.target.value)}
                 />
-                <input
-                  className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
-                  placeholder="Enter user display name"
-                  value={channelInviteDisplayName}
-                  onChange={(e) => setChannelInviteDisplayName(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-medium text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={
-                    channelInviteSubmitting ||
-                    !channelInviteFriendId.trim() ||
-                    !channelInviteDisplayName.trim()
-                  }
-                >
-                  {channelInviteSubmitting ? "Inviting…" : "Invite to channel"}
-                </button>
+                {trimmedChannelInviteQuery !== "" && (
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-800 bg-slate-900/80 px-1 py-1">
+                    {channelInviteSearchLoading ? (
+                      <p className="text-[10px] text-slate-500">
+                        Searching users...
+                      </p>
+                    ) : channelInviteMatches.length === 0 ? (
+                      <p className="text-[10px] text-slate-500">
+                        No matching users found.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {channelInviteMatches.map((user) => {
+                          const isMember = channelMemberIds.has(user.id);
+                          const isFriend = friendIds.has(user.id);
+                          return (
+                            <li
+                              key={user.id}
+                              className="flex items-center justify-between rounded-md bg-slate-900 px-2 py-1"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-medium">
+                                  {user.displayName}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {user.email}
+                                </span>
+                                {isFriend && (
+                                  <span className="text-[9px] text-emerald-400">
+                                    Friend
+                                  </span>
+                                )}
+                                {isMember && (
+                                  <span className="text-[9px] text-slate-400">
+                                    Already invited / pending
+                                  </span>
+                                )}
+                              </div>
+                              <div className="ml-2">
+                                {isMember ? (
+                                  <span className="text-[10px] text-slate-500">
+                                    Already in channel
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleInviteFriendToActiveChannel(user)
+                                    }
+                                    disabled={channelInviteSubmitting}
+                                    className="rounded-md border border-emerald-500 px-2 py-0.5 text-[10px] font-medium text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {channelInviteSubmitting
+                                      ? "Inviting…"
+                                      : "Invite"}
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={handleDeleteActiveChannel}
@@ -3241,7 +3359,7 @@ export default function HomePage() {
                 >
                   Delete channel
                 </button>
-              </form>
+              </div>
             )}
 
             <div className="mt-4 flex items-center justify-between px-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">

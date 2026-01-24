@@ -55,6 +55,7 @@ import {
   removeUserFromChannel,
   deleteChannelById,
   updateUserProfile,
+  searchUsers,
   type StoredMessage,
 } from "./db";
 import {
@@ -208,6 +209,66 @@ app.post("/auth/register", async (req, res) => {
     return res.status(500).json({ error: "Failed to register user" });
   }
 });
+
+app.get(
+  "/users/search",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const q = (req.query.q as string | undefined) ?? "";
+    const query = q.trim();
+    if (!query) {
+      return res
+        .status(400)
+        .json({ error: "Query parameter 'q' is required" });
+    }
+
+    let limit = 20;
+    const limitRaw = req.query.limit as string | undefined;
+    if (limitRaw) {
+      const parsed = Number.parseInt(limitRaw, 10);
+      if (!Number.isNaN(parsed) && parsed > 0 && parsed <= 100) {
+        limit = parsed;
+      }
+    }
+
+    const emailVerifiedOnlyRaw = req.query.emailVerifiedOnly as
+      | string
+      | undefined;
+    const emailVerifiedOnly =
+      emailVerifiedOnlyRaw === "false" || emailVerifiedOnlyRaw === "0"
+        ? false
+        : true;
+
+    const channelId = req.query.channelId as string | undefined;
+
+    try {
+      const users = await searchUsers({
+        query,
+        limit,
+        excludeUserId: userId,
+        emailVerifiedOnly,
+        excludeBannedForConversationId: channelId,
+      });
+
+      return res.json({
+        users: users.map((u) => ({
+          id: u.id,
+          email: u.email,
+          displayName: u.display_name,
+          avatarUrl: u.avatar_url,
+        })),
+      });
+    } catch (error) {
+      console.error("Failed to search users", error);
+      return res.status(500).json({ error: "Failed to search users" });
+    }
+  }
+);
 
 app.post(
   "/uploads",
