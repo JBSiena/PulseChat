@@ -636,7 +636,7 @@ export default function HomePage() {
           : "Failed to load channel members"
       );
     } finally {
-      setChannelMembersError(null);
+      setChannelMembersLoading(false);
     }
   };
 
