@@ -71,6 +71,9 @@ export async function initDb() {
       display_name TEXT NOT NULL,
       password_hash TEXT,
       avatar_url TEXT,
+      status TEXT,
+      email_verified BOOLEAN NOT NULL DEFAULT false,
+      global_role TEXT NOT NULL DEFAULT 'member',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -224,89 +227,6 @@ export async function initDb() {
   }
 }
 
-export async function createChannelForUser(params: {
-  userId: string
-  name: string
-}): Promise<StoredConversation> {
-  const { userId, name } = params
-  const title = name.trim()
-
-  const baseSlug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'channel'
-
-  const randomSuffix = crypto.randomBytes(2).toString('hex')
-  const slug = `${baseSlug}-${randomSuffix}`
-  const id = crypto.randomUUID()
-
-  const result = await pool.query<StoredConversation>(
-    `INSERT INTO conversations (id, type, title, slug, is_public, created_by)
-     VALUES ($1, 'channel', $2, $3, false, $4)
-     RETURNING id, type, title, slug, is_public, created_by`,
-    [id, title, slug, userId],
-  )
-
-  const channel = result.rows[0]
-
-  await pool.query(
-    `INSERT INTO conversation_participants (conversation_id, user_id, role)
-     VALUES ($1, $2, 'owner')
-     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
-    [channel.id, userId],
-  )
-
-  return channel
-}
-
-export async function getChannelsForUser(userId: string): Promise<StoredConversation[]> {
-  const result = await pool.query<StoredConversation>(
-    `SELECT c.id,
-            c.type,
-            c.title,
-            c.slug,
-            c.is_public,
-            c.created_by,
-            cp.role AS participant_role
-     FROM conversations c
-     JOIN conversation_participants cp ON cp.conversation_id = c.id
-     WHERE cp.user_id = $1
-       AND c.type = 'channel'
-     ORDER BY COALESCE(c.title, c.slug) ASC`,
-    [userId],
-  )
-
-  return result.rows
-}
-
-export async function addUserToChannel(params: {
-  channelId: string
-  userId: string
-}): Promise<void> {
-  const { channelId, userId } = params
-  await pool.query(
-    `INSERT INTO conversation_participants (conversation_id, user_id, role)
-     VALUES ($1, $2, 'member')
-     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
-    [channelId, userId],
-  )
-}
-
-export async function getChannelParticipantRole(params: {
-  channelId: string
-  userId: string
-}): Promise<string | null> {
-  const { channelId, userId } = params
-  const result = await pool.query<{ role: string }>(
-    `SELECT role
-     FROM conversation_participants
-     WHERE conversation_id = $1 AND user_id = $2`,
-    [channelId, userId],
-  )
-
-  return result.rows[0]?.role ?? null
-}
-
 export interface ChannelMemberRow {
   user_id: string
   email: string
@@ -443,6 +363,7 @@ export async function getBlockedUsersForUser(userId: string): Promise<DbUser[]> 
             u.display_name,
             u.password_hash,
             u.avatar_url,
+            u.status,
             u.email_verified,
             u.global_role,
             u.created_at,
@@ -809,6 +730,7 @@ export async function getFriendsForUser(userId: string): Promise<DbUser[]> {
             u.display_name,
             u.password_hash,
             u.avatar_url,
+            u.status,
             u.email_verified,
             u.global_role,
             u.created_at,
@@ -881,6 +803,7 @@ export interface DbUser {
   display_name: string
   password_hash: string | null
   avatar_url: string | null
+  status: string | null
   email_verified: boolean
   global_role: string
   created_at: Date
@@ -928,17 +851,17 @@ export async function createUser(params: {
   const id = crypto.randomUUID()
   const { email, displayName, passwordHash, avatarUrl = null } = params
   const result = await pool.query<DbUser>(
-    `INSERT INTO users (id, email, display_name, password_hash, avatar_url)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at`,
-    [id, email, displayName, passwordHash, avatarUrl],
+    `INSERT INTO users (id, email, display_name, password_hash, avatar_url, status)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, email, display_name, password_hash, avatar_url, status, email_verified, global_role, created_at, updated_at`,
+    [id, email, displayName, passwordHash, avatarUrl, null],
   )
   return result.rows[0]
 }
 
 export async function findUserByEmail(email: string): Promise<DbUser | null> {
   const result = await pool.query<DbUser>(
-    `SELECT id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at
+    `SELECT id, email, display_name, password_hash, avatar_url, status, email_verified, global_role, created_at, updated_at
      FROM users
      WHERE email = $1`,
     [email],
@@ -948,7 +871,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
 
 export async function findUserByDisplayName(displayName: string): Promise<DbUser | null> {
   const result = await pool.query<DbUser>(
-    `SELECT id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at
+    `SELECT id, email, display_name, password_hash, avatar_url, status, email_verified, global_role, created_at, updated_at
      FROM users
      WHERE LOWER(display_name) = LOWER($1)`,
     [displayName],
@@ -958,7 +881,7 @@ export async function findUserByDisplayName(displayName: string): Promise<DbUser
 
 export async function getUserById(id: string): Promise<DbUser | null> {
   const result = await pool.query<DbUser>(
-    `SELECT id, email, display_name, password_hash, avatar_url, email_verified, global_role, created_at, updated_at
+    `SELECT id, email, display_name, password_hash, avatar_url, status, email_verified, global_role, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id],

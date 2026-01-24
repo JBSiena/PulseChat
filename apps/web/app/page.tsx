@@ -227,6 +227,15 @@ export default function HomePage() {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileDisplayName, setProfileDisplayName] = useState(
+    authUser?.displayName ?? ""
+  );
+  const [profileStatus, setProfileStatus] = useState(authUser?.status ?? "");
+  const [profileSubmitting, setProfileSubmitting] = useState(false);
+  const [profileAvatarUploading, setProfileAvatarUploading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [isAdminFeedbackOpen, setIsAdminFeedbackOpen] = useState(false);
   const [adminFeedback, setAdminFeedback] = useState<AdminFeedbackItem[]>([]);
   const [adminFeedbackLoading, setAdminFeedbackLoading] = useState(false);
@@ -301,6 +310,127 @@ export default function HomePage() {
       );
     } finally {
       setAdminFeedbackLoading(false);
+    }
+  };
+
+  const handleUpdateProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!authToken) {
+      setProfileError("You must be logged in to update your profile");
+      return;
+    }
+
+    const trimmedDisplayName = profileDisplayName.trim();
+    const trimmedStatus = profileStatus.trim();
+    if (!trimmedDisplayName) {
+      setProfileError("Display name is required");
+      return;
+    }
+
+    setProfileSubmitting(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+
+    try {
+      const res = await axios.patch<{
+        user: {
+          id: string;
+          email: string;
+          displayName: string;
+          avatarUrl: string | null;
+          status: string | null;
+          globalRole: AuthUser["globalRole"];
+        };
+      }>(
+        `${apiBaseUrl}/me/profile`,
+        { displayName: trimmedDisplayName, status: trimmedStatus || null },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+
+      const updated = res.data.user;
+      dispatch(
+        setCredentials({
+          token: authToken,
+          user: {
+            id: updated.id,
+            email: updated.email,
+            displayName: updated.displayName,
+            avatarUrl: updated.avatarUrl,
+            globalRole: updated.globalRole,
+            status: updated.status,
+          },
+        })
+      );
+      setProfileSuccess("Profile updated");
+    } catch (error) {
+      setProfileError(
+        error instanceof Error ? error.message : "Failed to update profile"
+      );
+    } finally {
+      setProfileSubmitting(false);
+    }
+  };
+
+  const handleProfileAvatarChange = async (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!authToken) {
+      setProfileError("You must be logged in to update your avatar");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setProfileAvatarUploading(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+
+    try {
+      const res = await axios.post<{
+        user: {
+          id: string;
+          email: string;
+          displayName: string;
+          avatarUrl: string | null;
+          status: string | null;
+          globalRole: AuthUser["globalRole"];
+        };
+      }>(`${apiBaseUrl}/me/avatar`, formData, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      const updated = res.data.user;
+      dispatch(
+        setCredentials({
+          token: authToken,
+          user: {
+            id: updated.id,
+            email: updated.email,
+            displayName: updated.displayName,
+            avatarUrl: updated.avatarUrl,
+            globalRole: updated.globalRole,
+            status: updated.status,
+          },
+        })
+      );
+      setProfileSuccess("Profile picture updated");
+    } catch (error) {
+      setProfileError(
+        error instanceof Error ? error.message : "Failed to upload avatar"
+      );
+    } finally {
+      setProfileAvatarUploading(false);
+      event.target.value = "";
     }
   };
 
@@ -931,6 +1061,13 @@ export default function HomePage() {
       dispatch(setUsername(authUser.displayName));
     }
   }, [authUser, username, dispatch]);
+
+  useEffect(() => {
+    if (authUser) {
+      setProfileDisplayName(authUser.displayName ?? "");
+      setProfileStatus(authUser.status ?? "");
+    }
+  }, [authUser]);
 
   const handleSelectRoom = (nextRoom: string) => {
     if (!nextRoom || nextRoom === room) return;
@@ -3285,6 +3422,76 @@ export default function HomePage() {
               type="button"
               className="inline-flex w-full items-center justify-center rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
               onClick={() => {
+                setIsProfileOpen((prev) => !prev);
+                setProfileError(null);
+                setProfileSuccess(null);
+              }}
+            >
+              Profile / Account
+            </button>
+            {isProfileOpen && (
+              <form
+                onSubmit={handleUpdateProfile}
+                className="mt-2 space-y-1 text-[11px] text-slate-300"
+              >
+                {profileError && (
+                  <p className="text-[10px] text-rose-400">{profileError}</p>
+                )}
+                {profileSuccess && (
+                  <p className="text-[10px] text-emerald-400">
+                    {profileSuccess}
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200">
+                    {authUser?.displayName
+                      ? authUser.displayName.charAt(0).toUpperCase()
+                      : "?"}
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      className="mb-1 w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                      placeholder="Display name"
+                      value={profileDisplayName}
+                      onChange={(e) => setProfileDisplayName(e.target.value)}
+                    />
+                    <input
+                      className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                      placeholder="Status (optional)"
+                      value={profileStatus}
+                      onChange={(e) => setProfileStatus(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1 text-[10px] text-slate-300 hover:text-emerald-300">
+                    <span className="inline-flex h-6 items-center justify-center rounded-full bg-slate-800 px-2 text-[10px]">
+                      {profileAvatarUploading ? "Uploading…" : "Change avatar"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleProfileAvatarChange}
+                      disabled={profileAvatarUploading}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-medium text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={profileSubmitting}
+                  >
+                    {profileSubmitting ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+          <div className="border-t border-slate-800 px-4 py-3 text-xs">
+            <button
+              type="button"
+              className="inline-flex w-full items-center justify-center rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+              onClick={() => {
                 setIsFeedbackOpen((prev) => !prev);
                 setFeedbackError(null);
                 setFeedbackSuccess(null);
@@ -3358,6 +3565,11 @@ export default function HomePage() {
                   {connected ? "Online" : "Offline"} • You:{" "}
                   {authUser?.displayName}
                 </p>
+                {authUser?.status && (
+                  <p className="text-[10px] text-slate-500">
+                    Status: {authUser.status}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3 text-[11px] text-slate-400">

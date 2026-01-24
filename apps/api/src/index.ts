@@ -53,6 +53,7 @@ import {
   getChannelMembers,
   removeUserFromChannel,
   deleteChannelById,
+  updateUserProfile,
   type StoredMessage,
 } from "./db";
 import {
@@ -197,6 +198,7 @@ app.post("/auth/register", async (req, res) => {
         email: user.email,
         displayName: user.display_name,
         avatarUrl: user.avatar_url,
+        status: user.status,
         globalRole: user.global_role,
       },
     });
@@ -323,6 +325,7 @@ app.post("/auth/verify-email", async (req, res) => {
           email: user.email,
           displayName: user.display_name,
           avatarUrl: user.avatar_url,
+          status: user.status,
           globalRole: user.global_role,
         },
       });
@@ -353,6 +356,7 @@ app.post("/auth/verify-email", async (req, res) => {
         email: finalUser.email,
         displayName: finalUser.display_name,
         avatarUrl: finalUser.avatar_url,
+        status: finalUser.status,
         globalRole: finalUser.global_role,
       },
     });
@@ -723,6 +727,7 @@ app.post("/auth/login", async (req, res) => {
       email: user.email,
       displayName: user.display_name,
       avatarUrl: user.avatar_url,
+      status: user.status,
       globalRole: user.global_role,
     },
   });
@@ -862,10 +867,137 @@ app.get("/auth/me", authMiddleware, async (req: AuthenticatedRequest, res) => {
       email: user.email,
       displayName: user.display_name,
       avatarUrl: user.avatar_url,
+      status: user.status,
       globalRole: user.global_role,
     },
   });
 });
+
+app.patch(
+  "/me/profile",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { displayName, status } = req.body as {
+      displayName?: string;
+      status?: string | null;
+    };
+
+    if (
+      displayName != null &&
+      typeof displayName === "string" &&
+      !displayName.trim()
+    ) {
+      return res
+        .status(400)
+        .json({ error: "displayName, if provided, must not be empty" });
+    }
+
+    try {
+      const updated = await updateUserProfile({
+        userId,
+        displayName,
+        status: status ?? null,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.json({
+        user: {
+          id: updated.id,
+          email: updated.email,
+          displayName: updated.display_name,
+          avatarUrl: updated.avatar_url,
+          status: updated.status,
+          globalRole: updated.global_role,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to update profile", error);
+      return res.status(500).json({ error: "Failed to update profile" });
+    }
+  }
+);
+
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
+app.post(
+  "/me/avatar",
+  authMiddleware,
+  (req: AuthenticatedRequest, res, next) => {
+    avatarUpload.single("file")(req as any, res as any, (err: any) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          return res
+            .status(400)
+            .json({ error: "Avatar must be 5MB or smaller" });
+        }
+        console.error("Failed to process avatar upload", err);
+        return res
+          .status(400)
+          .json({ error: "Failed to process avatar upload" });
+      }
+      next();
+    });
+  },
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_API_SECRET
+    ) {
+      return res
+        .status(500)
+        .json({ error: "File uploads are not configured on the server" });
+    }
+
+    const file = (req.file ?? null) as Express.Multer.File | null;
+    if (!file) {
+      return res.status(400).json({ error: "Avatar file is required" });
+    }
+
+    try {
+      const upload = await uploadBufferToCloudinary(file);
+
+      const updated = await updateUserProfile({
+        userId,
+        avatarUrl: upload.url,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.json({
+        user: {
+          id: updated.id,
+          email: updated.email,
+          displayName: updated.display_name,
+          avatarUrl: updated.avatar_url,
+          status: updated.status,
+          globalRole: updated.global_role,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to upload avatar", error);
+      return res.status(500).json({ error: "Failed to upload avatar" });
+    }
+  }
+);
 
 app.get("/friends", authMiddleware, async (req: AuthenticatedRequest, res) => {
   const userId = req.user?.sub;
