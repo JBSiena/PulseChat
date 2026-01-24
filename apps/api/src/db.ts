@@ -79,6 +79,9 @@ export async function initDb() {
     );
 
     ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS status TEXT;
+
+    ALTER TABLE users
       ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
 
     ALTER TABLE users
