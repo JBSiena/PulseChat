@@ -595,6 +595,12 @@ export default function HomePage() {
     activeCustomChannel && activeCustomChannel.participantRole === "owner"
   );
 
+  const canModerateActiveChannel = Boolean(
+    activeCustomChannel &&
+      (activeCustomChannel.participantRole === "owner" ||
+        activeCustomChannel.participantRole === "moderator")
+  );
+
   const loadChannelMembers = async (channel: ChannelSummary) => {
     if (!authToken || !channel.conversationId) return;
     setChannelMembersLoading(true);
@@ -674,6 +680,43 @@ export default function HomePage() {
         error instanceof Error
           ? error.message
           : "Failed to remove member from channel"
+      );
+    }
+  };
+
+  const handleUpdateChannelMemberRole = async (
+    member: ChannelMemberSummary,
+    newRole: "member" | "moderator"
+  ) => {
+    if (!authToken || !activeCustomChannel?.conversationId) return;
+    if (member.role === newRole) return;
+    setChannelMembersError(null);
+    try {
+      await axios.patch(
+        `${apiBaseUrl}/channels/${activeCustomChannel.conversationId}/members/${member.id}/role`,
+        { role: newRole },
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      setChannelMembers((prev) =>
+        prev.map((m) =>
+          m.id === member.id
+            ? {
+                ...m,
+                role: newRole,
+              }
+            : m
+        )
+      );
+    } catch (error) {
+      setChannelMembersError(
+        error instanceof Error
+          ? error.message
+          : "Failed to update member role"
       );
     }
   };
@@ -3415,10 +3458,18 @@ export default function HomePage() {
                   </p>
                 )}
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200">
-                    {authUser?.displayName
-                      ? authUser.displayName.charAt(0).toUpperCase()
-                      : "?"}
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200 overflow-hidden">
+                    {authUser?.avatarUrl ? (
+                      <img
+                        src={authUser.avatarUrl}
+                        alt={authUser.displayName ?? "Profile avatar"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : authUser?.displayName ? (
+                      authUser.displayName.charAt(0).toUpperCase()
+                    ) : (
+                      "?"
+                    )}
                   </div>
                   <div className="flex-1">
                     <input
@@ -3683,6 +3734,29 @@ export default function HomePage() {
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
+                                {isActiveChannelOwner &&
+                                  !member.isSelf &&
+                                  member.role !== "owner" && (
+                                    <select
+                                      value={
+                                        member.role === "moderator"
+                                          ? "moderator"
+                                          : "member"
+                                      }
+                                      onChange={(e) =>
+                                        handleUpdateChannelMemberRole(
+                                          member,
+                                          e.target.value === "moderator"
+                                            ? "moderator"
+                                            : "member"
+                                        )
+                                      }
+                                      className="rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-[10px] text-slate-200"
+                                    >
+                                      <option value="member">Member</option>
+                                      <option value="moderator">Moderator</option>
+                                    </select>
+                                  )}
                                 {!member.isSelf && (
                                   <button
                                     type="button"
@@ -4043,6 +4117,15 @@ export default function HomePage() {
                                   Delete
                                 </button>
                               </>
+                            )}
+                            {!isOwn && canModerateActiveChannel && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMessage(msg)}
+                                className="hover:text-rose-300"
+                              >
+                                Delete
+                              </button>
                             )}
                           </div>
                         )}

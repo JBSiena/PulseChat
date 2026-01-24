@@ -217,6 +217,28 @@ export async function initDb() {
       used_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS conversation_bans (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      banned_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      reason TEXT,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (conversation_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS conversation_mutes (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      muted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      reason TEXT,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (conversation_id, user_id)
+    );
   `)
   const adminEmail = process.env.ADMIN_EMAIL
   if (adminEmail) {
@@ -274,6 +296,117 @@ export async function deleteChannelById(channelId: string): Promise<boolean> {
   )
 
   return (result.rowCount ?? 0) > 0
+}
+
+export async function banUserFromChannel(params: {
+  channelId: string
+  userId: string
+  bannedBy: string
+  reason?: string | null
+  expiresAt?: Date | null
+}): Promise<void> {
+  const { channelId, userId, bannedBy, reason, expiresAt } = params
+  await pool.query(
+    `INSERT INTO conversation_bans (conversation_id, user_id, banned_by, reason, expires_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (conversation_id, user_id)
+     DO UPDATE SET banned_by = EXCLUDED.banned_by,
+                   reason = EXCLUDED.reason,
+                   expires_at = EXCLUDED.expires_at,
+                   created_at = NOW()`,
+    [channelId, userId, bannedBy, reason ?? null, expiresAt ?? null],
+  )
+}
+
+export async function unbanUserFromChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<void> {
+  const { channelId, userId } = params
+  await pool.query(
+    `DELETE FROM conversation_bans
+     WHERE conversation_id = $1 AND user_id = $2`,
+    [channelId, userId],
+  )
+}
+
+export async function isUserBannedFromChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<boolean> {
+  const { channelId, userId } = params
+  const result = await pool.query<{ id: number }>(
+    `SELECT id
+     FROM conversation_bans
+     WHERE conversation_id = $1
+       AND user_id = $2
+       AND (expires_at IS NULL OR expires_at > NOW())
+     LIMIT 1`,
+    [channelId, userId],
+  )
+  return Boolean(result.rows[0])
+}
+
+export async function muteUserInChannel(params: {
+  channelId: string
+  userId: string
+  mutedBy: string
+  reason?: string | null
+  expiresAt?: Date | null
+}): Promise<void> {
+  const { channelId, userId, mutedBy, reason, expiresAt } = params
+  await pool.query(
+    `INSERT INTO conversation_mutes (conversation_id, user_id, muted_by, reason, expires_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (conversation_id, user_id)
+     DO UPDATE SET muted_by = EXCLUDED.muted_by,
+                   reason = EXCLUDED.reason,
+                   expires_at = EXCLUDED.expires_at,
+                   created_at = NOW()`,
+    [channelId, userId, mutedBy, reason ?? null, expiresAt ?? null],
+  )
+}
+
+export async function unmuteUserInChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<void> {
+  const { channelId, userId } = params
+  await pool.query(
+    `DELETE FROM conversation_mutes
+     WHERE conversation_id = $1 AND user_id = $2`,
+    [channelId, userId],
+  )
+}
+
+export async function isUserMutedInChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<boolean> {
+  const { channelId, userId } = params
+  const result = await pool.query<{ id: number }>(
+    `SELECT id
+     FROM conversation_mutes
+     WHERE conversation_id = $1
+       AND user_id = $2
+       AND (expires_at IS NULL OR expires_at > NOW())
+     LIMIT 1`,
+    [channelId, userId],
+  )
+  return Boolean(result.rows[0])
+}
+
+export async function findChannelIdForRoom(room: string): Promise<string | null> {
+  const result = await pool.query<{ id: string }>(
+    `SELECT id
+     FROM conversations
+     WHERE type = 'channel'
+       AND (slug = $1 OR id::text = $1)
+     LIMIT 1`,
+    [room],
+  )
+  const row = result.rows[0]
+  return row ? row.id : null
 }
 
 export async function createChannelForUser(params: {
@@ -338,6 +471,22 @@ export async function getChannelParticipantRole(params: {
 
   const row = result.rows[0]
   return row ? row.role : null
+}
+
+export async function updateChannelParticipantRole(params: {
+  channelId: string
+  userId: string
+  role: string
+}): Promise<boolean> {
+  const { channelId, userId, role } = params
+  const result = await pool.query(
+    `UPDATE conversation_participants
+     SET role = $3
+     WHERE conversation_id = $1 AND user_id = $2`,
+    [channelId, userId, role],
+  )
+
+  return (result.rowCount ?? 0) > 0
 }
 
 export async function addUserToChannel(params: {
@@ -779,14 +928,60 @@ export async function softDeleteMessageForUser(params: {
   userId: string
 }): Promise<StoredMessage | null> {
   const { messageId, userId } = params
+  const messageResult = await pool.query<StoredMessage>(
+    `SELECT id,
+            room,
+            username,
+            message,
+            created_at,
+            user_id,
+            reply_to_message_id,
+            edited_at,
+            deleted_at,
+            deleted_by
+     FROM messages
+     WHERE id = $1`,
+    [messageId],
+  )
+
+  const message = messageResult.rows[0]
+  if (!message) return null
+
+  let canDelete = message.user_id === userId
+
+  if (!canDelete) {
+    const channelId = await findChannelIdForRoom(message.room)
+    if (channelId) {
+      const role = await getChannelParticipantRole({
+        channelId,
+        userId,
+      })
+      if (role === 'owner' || role === 'moderator') {
+        canDelete = true
+      }
+    }
+  }
+
+  if (!canDelete) return null
+
   const result = await pool.query<StoredMessage>(
     `UPDATE messages
      SET deleted_at = NOW(),
          deleted_by = $1
-     WHERE id = $2 AND user_id = $1
-     RETURNING *`,
+     WHERE id = $2
+     RETURNING id,
+               room,
+               username,
+               message,
+               created_at,
+               user_id,
+               reply_to_message_id,
+               edited_at,
+               deleted_at,
+               deleted_by`,
     [userId, messageId],
   )
+
   return result.rows[0] ?? null
 }
 

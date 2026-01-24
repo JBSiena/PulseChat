@@ -50,6 +50,7 @@ import {
   createMessageAttachments,
   assignAttachmentsToMessage,
   getChannelParticipantRole,
+  updateChannelParticipantRole,
   getChannelMembers,
   removeUserFromChannel,
   deleteChannelById,
@@ -619,6 +620,77 @@ app.delete(
       return res
         .status(500)
         .json({ error: "Failed to remove user from channel" });
+    }
+  }
+);
+
+app.patch(
+  "/channels/:channelId/members/:memberId/role",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const channelId = req.params.channelId as string;
+    const memberId = req.params.memberId as string;
+    const { role } = req.body as { role?: string };
+
+    if (!role || (role !== "member" && role !== "moderator")) {
+      return res
+        .status(400)
+        .json({ error: "role must be 'member' or 'moderator'" });
+    }
+
+    if (memberId === userId) {
+      return res
+        .status(400)
+        .json({ error: "You cannot change your own role in this channel" });
+    }
+
+    try {
+      const callerRole = await getChannelParticipantRole({ channelId, userId });
+      if (callerRole !== "owner") {
+        return res
+          .status(403)
+          .json({ error: "Only the channel owner can change member roles" });
+      }
+
+      const targetRole = await getChannelParticipantRole({
+        channelId,
+        userId: memberId,
+      });
+      if (!targetRole) {
+        return res
+          .status(404)
+          .json({ error: "User is not a member of this channel" });
+      }
+
+      if (targetRole === "owner") {
+        return res
+          .status(400)
+          .json({ error: "You cannot change the role of an owner" });
+      }
+
+      const updated = await updateChannelParticipantRole({
+        channelId,
+        userId: memberId,
+        role,
+      });
+
+      if (!updated) {
+        return res
+          .status(500)
+          .json({ error: "Failed to update member role" });
+      }
+
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Failed to update channel member role", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to update channel member role" });
     }
   }
 );
@@ -1550,7 +1622,9 @@ io.on("connection", (socket) => {
           messageId: updated.id,
           room: updated.room,
           message: updated.message,
-          editedAt: updated.edited_at ? updated.edited_at.toISOString() : null,
+          editedAt: updated.edited_at
+            ? updated.edited_at.toISOString()
+            : null,
         });
       } catch (error) {
         console.error("Failed to edit message", error);
@@ -1576,7 +1650,9 @@ io.on("connection", (socket) => {
       io.to(deleted.room).emit("message_deleted", {
         messageId: deleted.id,
         room: deleted.room,
-        deletedAt: deleted.deleted_at ? deleted.deleted_at.toISOString() : null,
+        deletedAt: deleted.deleted_at
+          ? deleted.deleted_at.toISOString()
+          : null,
       });
     } catch (error) {
       console.error("Failed to delete message", error);
@@ -1608,7 +1684,6 @@ io.on("connection", (socket) => {
           updatedAt: updated.updated_at.toISOString(),
         });
 
-        // Also emit updated unread counts just for this user
         const [unreadRows, mentionUnreadRows] = await Promise.all([
           getUnreadCountsForUser(userId),
           getMentionUnreadCountsForUser(userId),
