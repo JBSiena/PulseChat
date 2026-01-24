@@ -273,6 +273,83 @@ export async function deleteChannelById(channelId: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0
 }
 
+export async function createChannelForUser(params: {
+  userId: string
+  name: string
+}): Promise<StoredConversation> {
+  const { userId, name } = params
+
+  const id = crypto.randomUUID()
+  const title = name.trim()
+
+  const created = await pool.query<StoredConversation>(
+    `INSERT INTO conversations (id, type, title, slug, is_public, created_by)
+     VALUES ($1, 'channel', $2, $3, $4, $5)
+     RETURNING id, type, title, slug, is_public, created_by`,
+    [id, title, null, false, userId],
+  )
+
+  await pool.query(
+    `INSERT INTO conversation_participants (conversation_id, user_id, role)
+     VALUES ($1, $2, 'owner')
+     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+    [id, userId],
+  )
+
+  return created.rows[0]
+}
+
+export async function getChannelsForUser(userId: string): Promise<StoredConversation[]> {
+  const result = await pool.query<StoredConversation>(
+    `SELECT c.id,
+            c.type,
+            c.title,
+            c.slug,
+            c.is_public,
+            c.created_by,
+            cp.role AS participant_role
+     FROM conversations c
+     JOIN conversation_participants cp
+       ON cp.conversation_id = c.id
+     WHERE c.type = 'channel'
+       AND cp.user_id = $1
+     ORDER BY c.created_at ASC`,
+    [userId],
+  )
+
+  return result.rows
+}
+
+export async function getChannelParticipantRole(params: {
+  channelId: string
+  userId: string
+}): Promise<string | null> {
+  const { channelId, userId } = params
+  const result = await pool.query<{ role: string }>(
+    `SELECT role
+     FROM conversation_participants
+     WHERE conversation_id = $1
+       AND user_id = $2`,
+    [channelId, userId],
+  )
+
+  const row = result.rows[0]
+  return row ? row.role : null
+}
+
+export async function addUserToChannel(params: {
+  channelId: string
+  userId: string
+}): Promise<void> {
+  const { channelId, userId } = params
+  await pool.query(
+    `INSERT INTO conversation_participants (conversation_id, user_id, role)
+     VALUES ($1, $2, 'member')
+     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+    [channelId, userId],
+  )
+}
+
 export async function saveMessage(params: {
   room: string
   username: string
@@ -832,6 +909,50 @@ export async function markUserEmailVerified(userId: string): Promise<void> {
      WHERE id = $1`,
     [userId],
   )
+}
+
+export async function updateUserProfile(params: {
+  userId: string
+  displayName?: string
+  status?: string | null
+  avatarUrl?: string | null
+}): Promise<DbUser | null> {
+  const { userId, displayName, status, avatarUrl } = params
+
+  const setClauses: string[] = []
+  const values: (string | null)[] = []
+
+  if (displayName !== undefined) {
+    setClauses.push('display_name = $' + (setClauses.length + 1))
+    values.push(displayName)
+  }
+
+  if (status !== undefined) {
+    setClauses.push('status = $' + (setClauses.length + 1))
+    values.push(status)
+  }
+
+  if (avatarUrl !== undefined) {
+    setClauses.push('avatar_url = $' + (setClauses.length + 1))
+    values.push(avatarUrl)
+  }
+
+  if (setClauses.length === 0) {
+    const existing = await getUserById(userId)
+    return existing
+  }
+
+  setClauses.push('updated_at = NOW()')
+
+  const result = await pool.query<DbUser>(
+    `UPDATE users
+     SET ${setClauses.join(', ')}
+     WHERE id = $${values.length + 1}
+     RETURNING id, email, display_name, password_hash, avatar_url, status, email_verified, global_role, created_at, updated_at`,
+    [...values, userId],
+  )
+
+  return result.rows[0] ?? null
 }
 
 export interface OAuthAccount {
