@@ -3055,7 +3055,7 @@ export default function HomePage() {
 
   return (
     <main className="flex h-screen bg-slate-950 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
-      <div className="flex flex-1 min-h-0 overflow-hidden bg-slate-900/70">
+      <div className="flex flex-1 min-h-0 overflow-auto md:overflow-hidden bg-slate-900/70">
         {/* Sidebar (desktop) */}
         <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950/70 md:flex">
           <div className="flex items-center gap-2 px-4 py-4">
@@ -3736,41 +3736,46 @@ export default function HomePage() {
                   </span>
                 </button>
               )}
-              {/* Mobile Chat/Channels toggle */}
-              <div className="flex items-center gap-1 md:hidden">
-                <button
-                  type="button"
-                  onClick={() => setMobileTab("chat")}
-                  className={`rounded-full px-2 py-0.5 text-[10px] ${
-                    mobileTab === "chat"
-                      ? "bg-emerald-500 text-emerald-950"
-                      : "border border-slate-700 text-slate-300"
-                  }`}
-                >
-                  Chat
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobileTab("channels")}
-                  className={`rounded-full px-2 py-0.5 text-[10px] ${
-                    mobileTab === "channels"
-                      ? "bg-emerald-500 text-emerald-950"
-                      : "border border-slate-700 text-slate-300"
-                  }`}
-                >
-                  Channels
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobileTab("account")}
-                  className={`rounded-full px-2 py-0.5 text-[10px] ${
-                    mobileTab === "account"
-                      ? "bg-emerald-500 text-emerald-950"
-                      : "border border-slate-700 text-slate-300"
-                  }`}
-                >
-                  Account
-                </button>
+              {/* Mobile Chat / Channels / Account pill nav */}
+              <div className="md:hidden">
+                <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-1 py-0.5 text-[10px] shadow-[0_0_12px_rgba(0,0,0,0.6)]">
+                  <button
+                    type="button"
+                    onClick={() => setMobileTab("chat")}
+                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors ${
+                      mobileTab === "chat"
+                        ? "bg-emerald-500 text-emerald-950"
+                        : "text-slate-300"
+                    }`}
+                  >
+                    <span aria-hidden="true">💬</span>
+                    <span>Chat</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileTab("channels")}
+                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors ${
+                      mobileTab === "channels"
+                        ? "bg-emerald-500 text-emerald-950"
+                        : "text-slate-300"
+                    }`}
+                  >
+                    <span aria-hidden="true">#</span>
+                    <span>Channels</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileTab("account")}
+                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors ${
+                      mobileTab === "account"
+                        ? "bg-emerald-500 text-emerald-950"
+                        : "text-slate-300"
+                    }`}
+                  >
+                    <span aria-hidden="true">👤</span>
+                    <span>Account</span>
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <span
