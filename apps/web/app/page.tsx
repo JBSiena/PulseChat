@@ -3266,6 +3266,7 @@ export default function HomePage() {
                           label: `# ${baseLabel}`,
                           isSystem: false,
                           conversationId: ch.id,
+                          participantRole: "owner",
                         },
                       ];
                     });
