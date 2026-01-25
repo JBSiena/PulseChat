@@ -1146,6 +1146,7 @@ app.get("/friends", authMiddleware, async (req: AuthenticatedRequest, res) => {
         email: f.email,
         displayName: f.display_name,
         avatarUrl: f.avatar_url,
+        status: f.status,
       })),
     });
   } catch (error) {
@@ -1233,6 +1234,7 @@ app.post("/friends", authMiddleware, async (req: AuthenticatedRequest, res) => {
         email: friendUser.email,
         displayName: friendUser.display_name,
         avatarUrl: friendUser.avatar_url,
+        status: friendUser.status,
       },
     });
   } catch (error) {

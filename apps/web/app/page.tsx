@@ -71,6 +71,7 @@ interface FriendSummary {
   email: string;
   displayName: string;
   avatarUrl: string | null;
+  status?: string | null;
 }
 
 interface BlockedUserSummary {
@@ -3802,6 +3803,11 @@ export default function HomePage() {
                     ? ` • You: ${authUser.displayName}`
                     : ""}
                 </p>
+                {isDmRoom && activeDmFriend?.status && (
+                  <p className="text-[10px] text-slate-500">
+                    Status: {activeDmFriend.status}
+                  </p>
+                )}
                 {!isDmRoom && authUser?.status && (
                   <p className="text-[10px] text-slate-500">
                     Status: {authUser.status}
