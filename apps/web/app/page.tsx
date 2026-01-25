@@ -3697,7 +3697,7 @@ export default function HomePage() {
         </aside>
 
         {/* Main conversation area */}
-        <section className="flex flex-1 min-h-0 flex-col bg-slate-900/50">
+        <section className="flex flex-1 min-h-0 flex-col bg-slate-900/50 pb-16 md:pb-0">
           <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-slate-100">
@@ -3737,7 +3737,7 @@ export default function HomePage() {
                 </button>
               )}
               {/* Mobile Chat / Channels / Account pill nav */}
-              <div className="md:hidden">
+              <div className="hidden">
                 <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-1 py-0.5 text-[10px] shadow-[0_0_12px_rgba(0,0,0,0.6)]">
                   <button
                     type="button"
@@ -4781,6 +4781,72 @@ export default function HomePage() {
               </div>
             </form>
           )}
+
+          {/* Mobile bottom navigation bar */}
+          <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-800 bg-slate-950/95 px-6 py-2 md:hidden">
+            <div className="mx-auto flex max-w-md items-center justify-between text-xs text-slate-300">
+              <button
+                type="button"
+                onClick={() => setMobileTab("chat")}
+                className={`flex flex-col items-center gap-0.5 text-[10px] ${
+                  mobileTab === "chat" ? "text-emerald-400" : "text-slate-400"
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-base ${
+                    mobileTab === "chat"
+                      ? "bg-emerald-500 text-emerald-950 shadow-lg"
+                      : "bg-slate-800 text-slate-100"
+                  }`}
+                >
+                  💬
+                </span>
+                <span>Chat</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMobileTab("channels")}
+                className={`flex flex-col items-center gap-0.5 text-[10px] ${
+                  mobileTab === "channels"
+                    ? "text-emerald-400"
+                    : "text-slate-400"
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-base ${
+                    mobileTab === "channels"
+                      ? "bg-emerald-500 text-emerald-950 shadow-lg"
+                      : "bg-slate-800 text-slate-100"
+                  }`}
+                >
+                  #
+                </span>
+                <span>Channels</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMobileTab("account")}
+                className={`flex flex-col items-center gap-0.5 text-[10px] ${
+                  mobileTab === "account"
+                    ? "text-emerald-400"
+                    : "text-slate-400"
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-base ${
+                    mobileTab === "account"
+                      ? "bg-emerald-500 text-emerald-950 shadow-lg"
+                      : "bg-slate-800 text-slate-100"
+                  }`}
+                >
+                  👤
+                </span>
+                <span>Account</span>
+              </button>
+            </div>
+          </nav>
         </section>
       </div>
     </main>
