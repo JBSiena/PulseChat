@@ -3352,23 +3352,36 @@ export default function HomePage() {
                               key={user.id}
                               className="flex items-center justify-between rounded-md bg-slate-900 px-2 py-1"
                             >
-                              <div className="flex flex-col">
-                                <span className="text-[11px] font-medium">
-                                  {user.displayName}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {user.email}
-                                </span>
-                                {isFriend && (
-                                  <span className="text-[9px] text-emerald-400">
-                                    Friend
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-[10px] font-semibold text-slate-200">
+                                  {user.avatarUrl ? (
+                                    <img
+                                      src={user.avatarUrl}
+                                      alt={user.displayName}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    user.displayName.charAt(0).toUpperCase()
+                                  )}
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-medium">
+                                    {user.displayName}
                                   </span>
-                                )}
-                                {isMember && (
-                                  <span className="text-[9px] text-slate-400">
-                                    Already invited / pending
+                                  <span className="text-[10px] text-slate-400">
+                                    {user.email}
                                   </span>
-                                )}
+                                  {isFriend && (
+                                    <span className="text-[9px] text-emerald-400">
+                                      Friend
+                                    </span>
+                                  )}
+                                  {isMember && (
+                                    <span className="text-[9px] text-slate-400">
+                                      Already invited / pending
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="ml-2">
                                 {isMember ? (
@@ -3458,7 +3471,17 @@ export default function HomePage() {
                       }`}
                     >
                       <span className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200">
+                          {friend.avatarUrl ? (
+                            <img
+                              src={friend.avatarUrl}
+                              alt={friend.displayName}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            friend.displayName.charAt(0).toUpperCase()
+                          )}
+                        </span>
                         <span className={hasUnread ? "font-semibold" : ""}>
                           {friend.displayName}
                         </span>
@@ -3546,13 +3569,26 @@ export default function HomePage() {
                         key={user.id}
                         className="flex items-center justify-between rounded-md bg-slate-900/80 px-2 py-1"
                       >
-                        <div className="flex flex-col">
-                          <span className="text-[11px] font-medium">
-                            {user.displayName}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {user.email}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-[10px] font-semibold text-slate-200">
+                            {user.avatarUrl ? (
+                              <img
+                                src={user.avatarUrl}
+                                alt={user.displayName}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              user.displayName.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[11px] font-medium">
+                              {user.displayName}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {user.email}
+                            </span>
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -3742,8 +3778,16 @@ export default function HomePage() {
         <section className="flex flex-1 min-h-0 flex-col bg-slate-900/50 pb-16 md:pb-0">
           <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-slate-100">
-                {headerIconText}
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-xs font-semibold text-slate-100">
+                {isDmRoom && activeDmFriend?.avatarUrl ? (
+                  <img
+                    src={activeDmFriend.avatarUrl}
+                    alt={activeDmFriend.displayName}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  headerIconText
+                )}
               </div>
               <div>
                 <p className="text-sm font-semibold">PulseChat</p>
@@ -3992,7 +4036,17 @@ export default function HomePage() {
                             }`}
                           >
                             <span className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                              <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200">
+                                {friend.avatarUrl ? (
+                                  <img
+                                    src={friend.avatarUrl}
+                                    alt={friend.displayName}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  friend.displayName.charAt(0).toUpperCase()
+                                )}
+                              </span>
                               <span className={hasUnread ? "font-semibold" : ""}>
                                 {friend.displayName}
                               </span>
