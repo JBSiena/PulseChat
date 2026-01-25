@@ -3791,12 +3791,18 @@ export default function HomePage() {
                 )}
               </div>
               <div>
-                <p className="text-sm font-semibold">PulseChat</p>
-                <p className="text-[11px] text-slate-400">
-                  {connected ? "Online" : "Offline"} • You:{" "}
-                  {authUser?.displayName}
+                <p className="text-sm font-semibold">
+                  {isDmRoom ? headerTitle : "PulseChat"}
                 </p>
-                {authUser?.status && (
+                <p className="text-[11px] text-slate-400">
+                  {connected ? "Online" : "Offline"}
+                  {isDmRoom && activeDmFriend
+                    ? ` • ${activeDmFriend.displayName}`
+                    : authUser?.displayName
+                    ? ` • You: ${authUser.displayName}`
+                    : ""}
+                </p>
+                {!isDmRoom && authUser?.status && (
                   <p className="text-[10px] text-slate-500">
                     Status: {authUser.status}
                   </p>
