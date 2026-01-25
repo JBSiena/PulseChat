@@ -260,6 +260,9 @@ export default function HomePage() {
     null
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [mobileTab, setMobileTab] = useState<"chat" | "channels" | "account">(
+    "chat"
+  );
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
   const isAuthenticated = Boolean(authToken && authUser);
@@ -3053,8 +3056,8 @@ export default function HomePage() {
   return (
     <main className="flex h-screen bg-slate-950 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
       <div className="flex flex-1 min-h-0 overflow-hidden bg-slate-900/70">
-        {/* Sidebar */}
-        <aside className="flex w-64 flex-col border-r border-slate-800 bg-slate-950/70">
+        {/* Sidebar (desktop) */}
+        <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950/70 md:flex">
           <div className="flex items-center gap-2 px-4 py-4">
             <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500 text-sm font-bold text-slate-950 shadow-lg">
               PC
@@ -3733,6 +3736,42 @@ export default function HomePage() {
                   </span>
                 </button>
               )}
+              {/* Mobile Chat/Channels toggle */}
+              <div className="flex items-center gap-1 md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMobileTab("chat")}
+                  className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    mobileTab === "chat"
+                      ? "bg-emerald-500 text-emerald-950"
+                      : "border border-slate-700 text-slate-300"
+                  }`}
+                >
+                  Chat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileTab("channels")}
+                  className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    mobileTab === "channels"
+                      ? "bg-emerald-500 text-emerald-950"
+                      : "border border-slate-700 text-slate-300"
+                  }`}
+                >
+                  Channels
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileTab("account")}
+                  className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    mobileTab === "account"
+                      ? "bg-emerald-500 text-emerald-950"
+                      : "border border-slate-700 text-slate-300"
+                  }`}
+                >
+                  Account
+                </button>
+              </div>
               <div className="flex items-center gap-1">
                 <span
                   className={`h-2 w-2 rounded-full ${
@@ -3787,10 +3826,308 @@ export default function HomePage() {
               )}
             </div>
           </header>
+          {/* Mobile Channels panel */}
+          {mobileTab === "channels" && (
+            <div className="md:hidden border-b border-slate-800 bg-slate-950/80">
+              <div className="max-h-60 space-y-3 overflow-y-auto px-3 py-2 text-[11px]">
+                <div>
+                  <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                    <span>Channels</span>
+                    <button
+                      type="button"
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+                      onClick={() => {
+                        setIsAddChannelOpen((prev) => !prev);
+                        setAddChannelError(null);
+                      }}
+                      aria-label="Add channel"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {channels.map((ch) => {
+                      const active = ch.id === room;
+                      const totalUnread = unreadCounts[ch.id] ?? 0;
+                      const mentionUnread = mentionUnreadCounts[ch.id] ?? 0;
+                      const level = getNotificationLevelForRoom(ch.id);
+
+                      const effectiveUnread =
+                        level === "mentions" ? mentionUnread : totalUnread;
+                      const hasUnread =
+                        level === "muted" ? false : effectiveUnread > 0;
+                      const hasMentionHighlight = mentionUnread > 0;
+
+                      const badgeCount =
+                        level === "mentions" ? mentionUnread : totalUnread;
+
+                      return (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          onClick={() => {
+                            handleSelectRoom(ch.id);
+                            setMobileTab("chat");
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-left text-[11px] transition-colors ${
+                            active
+                              ? "bg-emerald-500/20 text-emerald-200"
+                              : "text-slate-300 hover:bg-slate-800"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-slate-400">#</span>
+                            <span className={hasUnread ? "font-semibold" : ""}>
+                              {ch.label.replace("# ", "")}
+                            </span>
+                          </span>
+                          {hasUnread && badgeCount > 0 && level !== "muted" && (
+                            <span
+                              className={`ml-2 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[9px] font-semibold ${
+                                hasMentionHighlight
+                                  ? "bg-amber-400 text-amber-950"
+                                  : "bg-emerald-500 text-emerald-950"
+                              }`}
+                            >
+                              {badgeCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mt-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                    <span>Direct Messages</span>
+                    <button
+                      type="button"
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+                      onClick={() => {
+                        setIsAddFriendOpen((prev) => !prev);
+                        setFriendsError(null);
+                      }}
+                      aria-label="Add friend"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {authUser &&
+                      friends.map((friend) => {
+                        const roomId = getDmRoomId(authUser.id, friend.id);
+                        const active = roomId === room;
+                        const totalUnread = unreadCounts[roomId] ?? 0;
+                        const mentionUnread = mentionUnreadCounts[roomId] ?? 0;
+                        const level = getNotificationLevelForRoom(roomId);
+
+                        const effectiveUnread =
+                          level === "mentions" ? mentionUnread : totalUnread;
+                        const hasUnread =
+                          level === "muted" ? false : effectiveUnread > 0;
+                        const hasMentionHighlight = mentionUnread > 0;
+                        const badgeCount =
+                          level === "mentions" ? mentionUnread : totalUnread;
+
+                        return (
+                          <button
+                            key={friend.id}
+                            type="button"
+                            onClick={() => {
+                              handleSelectRoom(roomId);
+                              setMobileTab("chat");
+                            }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-left text-[11px] transition-colors ${
+                              active
+                                ? "bg-emerald-500/20 text-emerald-200"
+                                : "text-slate-300 hover:bg-slate-800"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                              <span className={hasUnread ? "font-semibold" : ""}>
+                                {friend.displayName}
+                              </span>
+                            </span>
+                            {hasUnread && badgeCount > 0 && level !== "muted" && (
+                              <span
+                                className={`ml-2 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[9px] font-semibold ${
+                                  hasMentionHighlight
+                                    ? "bg-amber-400 text-amber-950"
+                                    : "bg-emerald-500 text-emerald-950"
+                                }`}
+                              >
+                                {badgeCount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    {!friendsLoading && friends.length === 0 && (
+                      <p className="px-1 text-[10px] text-slate-500">
+                        No friends yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {mobileTab === "account" && (
+            <div className="md:hidden border-b border-slate-800 bg-slate-950/80">
+              <div className="space-y-3 px-3 py-2 text-[11px]">
+                <div>
+                  <button
+                    type="button"
+                    className="inline-flex w-full items-center justify-center rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+                    onClick={() => {
+                      setIsProfileOpen((prev) => !prev);
+                      setProfileError(null);
+                      setProfileSuccess(null);
+                    }}
+                  >
+                    Profile / Account
+                  </button>
+                  {isProfileOpen && (
+                    <form
+                      onSubmit={handleUpdateProfile}
+                      className="mt-2 space-y-1 text-[11px] text-slate-300"
+                    >
+                      {profileError && (
+                        <p className="text-[10px] text-rose-400">{profileError}</p>
+                      )}
+                      {profileSuccess && (
+                        <p className="text-[10px] text-emerald-400">
+                          {profileSuccess}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200 overflow-hidden">
+                          {authUser?.avatarUrl ? (
+                            <img
+                              src={authUser.avatarUrl}
+                              alt={authUser.displayName ?? "Profile avatar"}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : authUser?.displayName ? (
+                            authUser.displayName.charAt(0).toUpperCase()
+                          ) : (
+                            "?"
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            className="mb-1 w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                            placeholder="Display name"
+                            value={profileDisplayName}
+                            onChange={(e) => setProfileDisplayName(e.target.value)}
+                          />
+                          <input
+                            className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                            placeholder="Status (optional)"
+                            value={profileStatus}
+                            onChange={(e) => setProfileStatus(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-1 text-[10px] text-slate-300 hover:text-emerald-300">
+                          <span className="inline-flex h-6 items-center justify-center rounded-full bg-slate-800 px-2 text-[10px]">
+                            {profileAvatarUploading ? "Uploading…" : "Change avatar"}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleProfileAvatarChange}
+                            disabled={profileAvatarUploading}
+                          />
+                        </label>
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-medium text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={profileSubmitting}
+                        >
+                          {profileSubmitting ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    className="inline-flex w-full items-center justify-center rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+                    onClick={() => {
+                      setIsFeedbackOpen((prev) => !prev);
+                      setFeedbackError(null);
+                      setFeedbackSuccess(null);
+                    }}
+                  >
+                    Feedback / Q&A
+                  </button>
+                  {isFeedbackOpen && (
+                    <form
+                      onSubmit={handleSubmitFeedback}
+                      className="mt-2 space-y-1 text-[11px] text-slate-300"
+                    >
+                      {feedbackError && (
+                        <p className="text-[10px] text-rose-400">{feedbackError}</p>
+                      )}
+                      {feedbackSuccess && (
+                        <p className="text-[10px] text-emerald-400">
+                          {feedbackSuccess}
+                        </p>
+                      )}
+                      <select
+                        className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                        value={feedbackCategory}
+                        onChange={(e) => setFeedbackCategory(e.target.value)}
+                      >
+                        <option value="">Category (optional)</option>
+                        <option value="bug">Bug report</option>
+                        <option value="feature">Feature request</option>
+                        <option value="question">Question</option>
+                        <option value="other">Other</option>
+                      </select>
+                      <textarea
+                        className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] outline-none ring-emerald-500 focus:border-emerald-500 focus:ring-1"
+                        rows={3}
+                        placeholder="Describe your question, bug, or idea..."
+                        value={feedbackMessage}
+                        onChange={(e) => setFeedbackMessage(e.target.value)}
+                      />
+                      <button
+                        type="submit"
+                        className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-medium text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={feedbackSubmitting || !feedbackMessage.trim()}
+                      >
+                        {feedbackSubmitting ? "Sending…" : "Send feedback"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="inline-flex w-full items-center justify-center rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-rose-500 hover:text-rose-300"
+                  >
+                    Logout
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {!isAdminFeedbackOpen && (
             <form
               onSubmit={handleSendMessage}
-              className="flex flex-1 min-h-0 flex-col"
+              className={`flex flex-1 min-h-0 flex-col ${
+                mobileTab !== "chat" ? "hidden md:flex" : ""
+              }`}
             >
               <div
                 ref={messagesContainerRef}
@@ -3825,7 +4162,7 @@ export default function HomePage() {
                         No members yet.
                       </p>
                     ) : (
-                      <ul className="mt-1 space-y-1">
+                      <ul className="mt-1 max-h-64 space-y-1 overflow-y-auto pr-1 scrollbar-thin">
                         {channelMembers.map((member) => {
                           const canRemove =
                             isActiveChannelOwner &&
