@@ -122,6 +122,48 @@ function getDmRoomId(selfId: string, friendId: string) {
   return `dm:${[selfId, friendId].sort().join(":")}`;
 }
 
+function formatMessageTimestamp(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate();
+
+  const timeFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  const dateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+
+  const timePart = timeFormatter.format(date);
+
+  if (sameDay) {
+    return `Today at ${timePart}`;
+  }
+
+  if (isYesterday) {
+    return `Yesterday at ${timePart}`;
+  }
+
+  return `${dateFormatter.format(date)} at ${timePart}`;
+}
+
 export default function HomePage() {
   const dispatch = useDispatch<AppDispatch>();
   const authToken = useSelector((state: RootState) => state.auth.token);
@@ -4434,6 +4476,13 @@ export default function HomePage() {
                           {isDeleted
                             ? "This message was deleted"
                             : renderMessageWithMentions(msg.message)}
+                        </p>
+                        <p
+                          className={`mt-1 text-[10px] text-slate-200/70 ${
+                            isOwn ? "text-right" : "text-left"
+                          }`}
+                        >
+                          {formatMessageTimestamp(msg.timestamp)}
                         </p>
                         {!isDeleted &&
                           msg.attachments &&
