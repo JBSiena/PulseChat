@@ -4350,6 +4350,11 @@ export default function HomePage() {
                   const isMenuOpen = userMenuMessage?.id === msg.id;
                   const isFriendForMessage =
                     !!msg.userId && friends.some((f) => f.id === msg.userId);
+                  const friendForMessage =
+                    msg.userId != null
+                      ? friends.find((f) => f.id === msg.userId)
+                      : undefined;
+                  const messageUserAvatarUrl = friendForMessage?.avatarUrl ?? null;
                   const isBlockedForMessage =
                     !!msg.userId &&
                     blockedUsers.some((u) => u.id === msg.userId);
@@ -4371,9 +4376,17 @@ export default function HomePage() {
                                 current?.id === msg.id ? null : msg
                               );
                             }}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
+                            className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
                           >
-                            {msg.user.charAt(0).toUpperCase()}
+                            {messageUserAvatarUrl ? (
+                              <img
+                                src={messageUserAvatarUrl}
+                                alt={msg.user}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              msg.user.charAt(0).toUpperCase()
+                            )}
                           </button>
                           {isMenuOpen && msg.userId && (
                             <div className="absolute left-0 top-9 z-20 w-44 rounded-md border border-slate-800 bg-slate-950/95 text-[11px] text-slate-100 shadow-lg">
